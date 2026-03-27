@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+data/logs/
+
+# Runtime data / local data
+users.json
+data/
+tmp/
+temp/
+
+# OS / editor files
+.DS_Store
+Thumbs.db
+.vscode/

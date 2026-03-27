@@ -1,0 +1,48 @@
+# NOTE:
+# The "version" field is no longer required in modern Docker Compose,
+# so we remove it to avoid warnings.
+
+services:
+
+  # -------------------------------
+  # UFRP API SERVICE (Main entry)
+  # -------------------------------
+  ufrp-api:
+    image: node:20-alpine            # Lightweight Node.js image
+    container_name: ufrp-api         # Fixed container name for easy reference
+    working_dir: /app                # Inside container working directory
+
+    volumes:
+      - ./app:/app                  # Your API code (server.js)
+      - ./data/uploads:/data/uploads  # Future file uploads
+      - ./data/queue:/data/queue      # Incoming submissions queue
+      - ./data/logs:/data/logs        # API logs
+
+    command: sh -c "node server.js"  # Start API server
+
+    ports:
+      - "3000:3000"                 # Expose API on port 3000
+
+    restart: unless-stopped          # Auto restart if container crashes
+
+
+  # ----------------------------------
+  # UFRP WORKER (Queue processor)
+  # ----------------------------------
+  ufrp-worker:
+    image: node:20-alpine            # Same Node.js runtime
+    container_name: ufrp-worker
+    working_dir: /app
+
+    volumes:
+      - ./worker:/app               # Worker code (sync-worker.js)
+      - ./data/uploads:/data/uploads # Staged uploaded files
+      - ./data/queue:/data/queue    # Read queued submissions
+      - ./data/processing:/data/processing # Files being processed
+      - ./data/sent:/data/sent      # Move processed files here
+      - ./data/failed:/data/failed  # Permanent failures
+      - ./data/logs:/data/logs      # Worker logs
+
+    command: sh -c "node sync-worker.js"  # Start worker loop
+
+    restart: unless-stopped
