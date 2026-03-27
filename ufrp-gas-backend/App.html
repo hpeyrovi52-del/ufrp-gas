@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="fa">
+  <head>
+    <base target="_top">
+    <?!= HtmlService.createHtmlOutputFromFile('styles').getContent(); ?>
+  </head>
+
+  <body onload="appInit()">
+    <div class="pageShell">
+      <div class="appCard">
+        <div class="topBar">
+  <div class="titleRow">
+    
+    <div class="titleRight">
+      <div class="appTitle">سامانه ثبت تراکنش مالی</div>
+      <div class="appHint">لطفا یک فرم را انتخاب کنید.</div>
+    </div>
+
+    <div class="titleLeft">
+      <div id="userFullName" class="userFullName"></div>
+      <div class="dotOnline" title="Online"></div>
+    </div>
+
+  </div>
+
+  <div id="statusText" class="statusText"></div>
+</div>
+
+        <!-- MENU VIEW -->
+        <div id="menuView" class="view">
+          <div id="menuContainer"></div>
+        </div>
+
+        <!-- FORM VIEW -->
+        <div id="formView" class="view" style="display:none;">
+          <?!= HtmlService.createHtmlOutputFromFile('HtmlFormShell').getContent(); ?>
+        </div>
+      </div>
+    </div>
+
+    <?!= HtmlService.createHtmlOutputFromFile('Client.js').getContent(); ?>
+  </body>
+</html>

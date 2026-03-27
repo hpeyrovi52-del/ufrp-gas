@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <title>Unified Financial Recording Platform</title>
+  <style>
+    :root{
+      --card: rgba(255,255,255,0.78);
+      --card-border: rgba(0,0,0,0.06);
+      --text: #111827;
+      --muted: rgba(17,24,39,0.60);
+      --blue: #1e5bd7;
+      --shadow: 0 16px 50px rgba(0,0,0,0.10);
+      --radius: 22px;
+      --pad: clamp(12px, 1.6vh, 16px);
+      --gap: clamp(10px, 1.4vh, 14px);
+    }
+    html,body{ height:100%; margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; color:var(--text); }
+    body{ background: transparent; }
+    .wrap{
+      min-height: 100vh; min-height: 100dvh;
+      display:flex; justify-content:center; align-items:flex-start;
+      padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom));
+      box-sizing:border-box;
+    }
+    .card{
+      width:min(980px, 96vw);
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(12px);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: var(--pad);
+      box-sizing:border-box;
+      overflow:hidden;
+    }
+    .top{
+      display:flex; align-items:center; justify-content:space-between;
+      gap:12px; padding: 6px 6px 12px;
+      border-bottom: 1px solid rgba(17,24,39,0.08);
+    }
+    .title{ font-weight: 900; font-size: 16px; }
+    .sub{ font-size: 13px; color: var(--muted); margin-top: 3px; line-height:1.4; }
+    .pill{
+      font-size: 12.5px; font-weight: 900;
+      padding: 7px 10px; border-radius: 999px;
+      border: 1px solid rgba(30,91,215,0.18);
+      background: rgba(30,91,215,0.08);
+      color: rgba(30,91,215,0.95);
+      white-space:nowrap;
+    }
+    .content{ padding: 12px 6px 6px; }
+    .center{
+      margin-bottom: 12px;
+      border: 1px solid rgba(17,24,39,0.08);
+      border-radius: 18px;
+      overflow:hidden;
+      background: rgba(255,255,255,0.55);
+    }
+    .centerHead{
+      padding: 10px 12px;
+      display:flex; align-items:center; justify-content:space-between;
+      gap:10px;
+      background: rgba(255,255,255,0.65);
+      border-bottom: 1px solid rgba(17,24,39,0.06);
+      font-weight: 900;
+    }
+    .forms{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--gap);
+      padding: 12px;
+      box-sizing:border-box;
+    }
+    @media (max-width: 760px){ .forms{ grid-template-columns: 1fr; } }
+    .formBtn{
+      border: 1px solid rgba(17,24,39,0.10);
+      background: rgba(255,255,255,0.72);
+      border-radius: 16px;
+      padding: 12px;
+      text-align:left;
+      cursor:pointer;
+      user-select:none;
+      transition: transform 80ms ease;
+    }
+    .formBtn:active{ transform: translateY(1px); }
+    .formName{ font-weight: 900; font-size: 14px; }
+    .formKey{ margin-top: 6px; font-size: 12px; color: var(--muted); }
+    .msg{
+      margin: 14px 6px 0;
+      padding: 12px;
+      border-radius: 16px;
+      border: 1px solid rgba(17,24,39,0.10);
+      background: rgba(255,255,255,0.65);
+      color: rgba(17,24,39,0.75);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .danger{
+      border-color: rgba(239,68,68,0.18);
+      background: rgba(239,68,68,0.08);
+      color: rgba(239,68,68,0.92);
+      font-weight: 800;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="top">
+        <div>
+          <div class="title">Unified Financial Recording Platform</div>
+          <div class="sub" id="subLine">Loading…</div>
+        </div>
+        <div class="pill" id="userPill">…</div>
+      </div>
+      <div class="content" id="content">
+        <div class="msg">Loading menu…</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  // Works in BOTH environments:
+  // - GAS WebApp: google.script.run
+  // - Hostwinds: window.gsCall (proxy.php)
+  function gsCall(fnName, ...args){
+    // Hostwinds path (proxy.php)
+    if (typeof window !== "undefined" && typeof window.gsCall === "function") {
+      return window.gsCall(fnName, ...args);
+    }
+
+    // GAS WebApp path
+    return new Promise((resolve, reject) => {
+      if (typeof google === "undefined" || !google.script || !google.script.run) {
+        reject(new Error("No gsCall transport available (google.script.run missing)"));
+        return;
+      }
+      const runner = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);
+      if (typeof runner[fnName] !== "function") {
+        reject(new Error(fnName + " is not a function"));
+        return;
+      }
+      runner[fnName](...args);
+    });
+  }
+
+  function esc(s){
+    return String(s ?? "").replace(/[&<>"']/g, c => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+    }[c]));
+  }
+
+  function goToForm(formKey){
+    const url = new URL(window.location.href);
+    url.searchParams.set("formKey", formKey);
+    window.location.href = url.toString();
+  }
+
+  function renderMenu(menu){
+    const content = document.getElementById("content");
+    if (!content) return;
+
+    if (!menu || !menu.length){
+      content.innerHTML = `<div class="msg danger">No accessible forms for this account.</div>`;
+      return;
+    }
+
+    content.innerHTML = "";
+    for (const c of menu){
+      const box = document.createElement("div");
+      box.className = "center";
+
+      const head = document.createElement("div");
+      head.className = "centerHead";
+      head.innerHTML = `
+        <div>${esc(c.TransactionCenterNameFa || c.TransactionCenterKey || "")}</div>
+        <div style="font-size:12px;color:rgba(17,24,39,0.55);font-weight:900">${esc(c.TransactionCenterKey||"")}</div>
+      `;
+      box.appendChild(head);
+
+      const forms = document.createElement("div");
+      forms.className = "forms";
+
+      for (const f of (c.forms || [])){
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "formBtn";
+        btn.innerHTML = `
+          <div class="formName">${esc(f.formNameFa || f.formKey || "")}</div>
+          <div class="formKey">${esc(f.formKey || "")}</div>
+        `;
+        btn.addEventListener("click", () => goToForm(f.formKey));
+        forms.appendChild(btn);
+      }
+
+      box.appendChild(forms);
+      content.appendChild(box);
+    }
+  }
+
+  (async function init(){
+    const sub = document.getElementById("subLine");
+    const pill = document.getElementById("userPill");
+    const content = document.getElementById("content");
+
+    try{
+      const res = await gsCall("app_getMenuForCurrentUser");
+
+      // If server says not ok, show server error (but don't assume "not signed in")
+      if (!res || !res.ok){
+        const msg = (res && (res.error || res.reason)) ? (res.error || res.reason) : "UNKNOWN";
+        if (pill) pill.textContent = "Access error";
+        if (sub) sub.textContent = "Menu could not be loaded.";
+        if (content) content.innerHTML = `<div class="msg danger">${esc(msg)}</div>`;
+        return;
+      }
+
+      // In Hostwinds, res.email might be empty/null. That's normal.
+      const email = (res.email && String(res.email).trim()) ? String(res.email).trim() : "";
+      if (pill) pill.textContent = email || "Owner mode";
+      if (sub) sub.textContent = "Select a transaction center and form.";
+
+      renderMenu(res.menu);
+
+    }catch(e){
+      if (pill) pill.textContent = "Error";
+      if (sub) sub.textContent = "Failed to load menu.";
+      if (content) content.innerHTML =
+        `<div class="msg danger">Error loading menu: ${esc(e && e.message ? e.message : e)}</div>`;
+    }
+  })();
+</script>
+</body>
+</html>

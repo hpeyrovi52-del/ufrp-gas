@@ -1,0 +1,67 @@
+const CACHE_NAME = "ufrp-shell-v1";
+const APP_SHELL = [
+  "index.html",
+  "client.js",
+  "client-offline.js"
+];
+
+self.addEventListener("install", (event) => {
+  console.log("Service Worker installing...");
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
+  );
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", (event) => {
+  console.log("Service Worker activating...");
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(
+        keys
+          .filter((key) => key !== CACHE_NAME)
+          .map((key) => caches.delete(key))
+      )
+    ).then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener("fetch", (event) => {
+  const req = event.request;
+  const url = new URL(req.url);
+
+  if (req.method !== "GET") return;
+
+  if (
+    url.pathname.startsWith("/api/") ||
+    url.pathname.includes("google-login.php") ||
+    url.pathname.includes("google-callback.php")
+  ) {
+    return;
+  }
+
+  if (req.mode === "navigate") {
+    event.respondWith(
+      fetch(req)
+        .then((res) => {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put("/index.html", copy));
+          return res;
+        })
+        .catch(() => caches.match("/index.html"))
+    );
+    return;
+  }
+
+  event.respondWith(
+  fetch(event.request)
+    .then(response => {
+      return response;
+    })
+    .catch(() => {
+      return caches.match(event.request).then(r => {
+        return r || caches.match("index.html");
+      });
+    })
+);
+});

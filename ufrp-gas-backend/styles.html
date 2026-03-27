@@ -1,0 +1,247 @@
+<style>
+  html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    background: #f7f9ff;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+
+    /* page itself must not scroll */
+    overflow: hidden;
+  }
+
+  /* Full page center container (no scroll here) */
+  .pageShell {
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 28px 18px;
+    box-sizing: border-box;
+  }
+
+  /* MAIN CARD (this must scroll, and scrollbar must be RIGHT) */
+  .appCard {
+    width: 100%;
+    max-width: 980px;
+    height: 100%;
+    max-height: calc(100vh - 56px);
+
+    background: #ffffff;
+    border: 1px solid #e6ecff;
+    border-radius: 20px;
+    padding: 18px 18px 22px;
+    box-shadow: 0 14px 40px rgba(0,0,0,0.08);
+
+    display: flex;
+    flex-direction: column;
+
+    /* internal scrolling only */
+    overflow-y: auto;
+    overflow-x: hidden;
+
+    /* CONTENT is RTL */
+    direction: rtl;
+
+    /* Force scrollbar gutter to be stable */
+    scrollbar-gutter: stable;
+  }
+
+  /* Keep title/header aligned to the right (RTL) */
+  .topBar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;   /* RTL: start = right */
+  text-align: right;
+  gap: 6px;
+  margin-bottom: 14px;
+  direction: rtl;
+}
+
+  .titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;  /* RTL: start = right */
+  gap: 10px;
+  width: 100%;
+  text-align: right;
+  direction: rtl;
+}
+
+  .appTitle {
+    font-size: 18px;
+    font-weight: 800;
+    color: #1b2a57;
+  }
+
+  .dotOnline {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: #22c55e;
+    box-shadow: 0 0 0 3px rgba(34,197,94,.18);
+    flex: 0 0 auto;
+  }
+
+  .appHint {
+    font-size: 13px;
+    opacity: .75;
+    color: #1b2a57;
+  }
+
+  .statusText {
+    margin-top: 4px;
+    font-size: 12px;
+    opacity: .8;
+    color: #1b2a57;
+  }
+
+  .view { margin-top: 14px; }
+
+  /* ----- Center header line + chip ----- */
+  .centerBlock { margin: 18px 0; }
+
+  .centerTitle {
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-bottom: 10px;
+  }
+
+  .centerTitle .line {
+    flex:1;
+    height:1px;
+    background: #d9e3ff;
+  }
+
+  .centerTitle .chip {
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: #eaf0ff;
+    border: 1px solid #d3e0ff;
+    font-size: 12px;
+    font-weight: 700;
+    color: #2b4aa0;
+    white-space: nowrap;
+  }
+
+  /* ----- Cards grid ----- */
+  .cardsGrid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .formCard {
+    background: #fff;
+    border: 1px solid #e6ecff;
+    border-radius: 14px;
+    padding: 14px 16px;
+    cursor: pointer;
+    box-shadow: 0 10px 28px rgba(0,0,0,0.06);
+    transition: transform .08s ease, box-shadow .08s ease;
+  }
+
+  .formCard:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 34px rgba(0,0,0,0.08);
+  }
+
+  .formCardTitle {
+    font-size: 13px;
+    line-height: 1.7;
+    color: #0f172a;
+  }
+
+  /* ----- FormShell ----- */
+  .formShell {
+    background:#fff;
+    border:1px solid #e6ecff;
+    border-radius:18px;
+    padding: 14px;
+    box-shadow: 0 10px 28px rgba(0,0,0,0.06);
+  }
+
+  .formShellHeader {
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    padding-bottom:10px;
+    border-bottom:1px solid #eef2ff;
+  }
+
+  .backBtn {
+    border:1px solid #d9e3ff;
+    background:#f5f8ff;
+    border-radius:12px;
+    padding:8px 12px;
+    cursor:pointer;
+  }
+
+  .formShellTitles { text-align:right; }
+  .formTitle { font-size: 14px; font-weight: 800; color:#0f172a; }
+  .formSubtitle { font-size: 12px; opacity:.75; margin-top: 2px; color:#334155; }
+
+  .debugBox { margin-top: 14px; }
+  .debugTitle { font-size: 12px; font-weight: 800; margin-bottom: 8px; opacity: .85; }
+
+  .debugPre {
+    direction:ltr;
+    text-align:left;
+    background:#0b1020;
+    color:#d7e2ff;
+    padding:12px;
+    border-radius:12px;
+    overflow:auto;
+    max-height: 420px;
+  }
+
+  @media (max-width: 720px) {
+    .cardsGrid { grid-template-columns: 1fr; }
+    .pageShell { padding: 16px; }
+  }
+
+  /* ===== TopBar layout fix (RTL correct alignment) ===== */
+
+.titleRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.titleRight {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end; /* RTL correct */
+  text-align: right;
+}
+
+.titleLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.userFullName {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1b2a57;
+  background: #eef3ff;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid #d9e3ff;
+}
+
+#fixedHeaderArea {
+  position: relative;
+  z-index: 10;
+}
+
+#scrollArea {
+  overflow-y: auto;
+  max-height: calc(100vh - 140px); /* adjust slightly if needed */
+}
+
+</style>

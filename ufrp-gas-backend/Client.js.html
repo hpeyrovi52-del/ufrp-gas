@@ -1,0 +1,1942 @@
+<script>
+/** =========================================================
+ *  Client.js.html — FULL REPLACEMENT (PRODUCTION, CRASH-SAFE)
+ *  ========================================================= */
+(function () {
+  "use strict";
+
+  // Mark as loaded ASAP (so your shell won't show "client didn't load")
+  window.__CLIENT_LOADED__ = true;
+
+  // -------------------------
+  // Helpers
+  // -------------------------
+  function qs(sel, root) { return (root || document).querySelector(sel); }
+  function qsa(sel, root) { return Array.from((root || document).querySelectorAll(sel)); }
+
+  function escapeHtml(s){
+    return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+    }[c]));
+  }
+
+  function gsCall(fnName, ...args){
+    return new Promise((resolve, reject) => {
+      if (typeof google === "undefined" || !google.script || !google.script.run) {
+        reject(new Error("google.script.run not available"));
+        return;
+      }
+      const runner = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);
+      if (typeof runner[fnName] !== "function") {
+        reject(new Error(fnName + " is not a function"));
+        return;
+      }
+      runner[fnName](...args);
+    });
+  }
+
+  function isDateLikeTitle(title){
+    const t = String(title || "");
+    return /تاریخ|date/i.test(t);
+  }
+
+  // -------------------------
+  // Options-header "*" support (RTL-safe)
+  // -------------------------
+  function normalizeHeaderFull(s){
+    return String(s ?? "")
+      .replace(/[\u200c\u200f\u202a-\u202e]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+  function headerAllowsAdd(rawHeader){
+    const h = normalizeHeaderFull(rawHeader);
+    return /[*٭✱✳✴]/.test(h);
+  }
+  function headerWithoutStar(rawHeader){
+    return normalizeHeaderFull(rawHeader).replace(/[*٭✱✳✴]/g, "").trim();
+  }
+  function findOptionsHeaderInfoForTitle(optionsFieldMap, title){
+    const wanted = normalizeHeaderFull(title);
+    const keys = Object.keys(optionsFieldMap || {});
+    for (const k of keys){
+      const cleaned = headerWithoutStar(k);
+      if (cleaned === wanted){
+        return { header: k, allowAdd: headerAllowsAdd(k) };
+      }
+    }
+    return { header: null, allowAdd: false };
+  }
+
+  // -------------------------
+  // Amount ("مبلغ") input helpers
+  // -------------------------
+  const FA_DIGITS = ["۰","۱","۲","۳","۴","۵","۶","۷","۸","۹"];
+  function toFaDigits(str){
+    return String(str ?? "").replace(/\d/g, d => FA_DIGITS[Number(d)]);
+  }
+  function stripToDigits(str){
+    const s = String(str ?? "")
+      .replace(/[۰-۹]/g, d => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
+      .replace(/[٠-٩]/g, d => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
+    return s.replace(/[^\d]/g, "");
+  }
+  function formatThousandsEn(digits){
+    if (!digits) return "";
+    digits = String(digits).replace(/^0+(?=\d)/, "0");
+    return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  }
+  function formatAmountFa(raw){
+    const digits = stripToDigits(raw);
+    const withSep = formatThousandsEn(digits);
+    return toFaDigits(withSep);
+  }
+  function isAmountTitle(title){
+    return /مبلغ/.test(String(title || ""));
+  }
+  function attachAmountInputBehavior(inputEl){
+    if (!inputEl) return;
+    inputEl.inputMode = "numeric";
+    inputEl.autocomplete = "off";
+    inputEl.spellcheck = false;
+    inputEl.dataset.rawDigits = "";
+
+    const applyFormat = () => {
+      const digits = stripToDigits(inputEl.value);
+      inputEl.dataset.rawDigits = digits;
+      inputEl.value = formatAmountFa(digits);
+    };
+
+    inputEl.addEventListener("input", applyFormat);
+    inputEl.addEventListener("paste", (e) => {
+      e.preventDefault();
+      const txt = (e.clipboardData || window.clipboardData).getData("text");
+      const digits = stripToDigits(txt);
+      inputEl.dataset.rawDigits = digits;
+      inputEl.value = formatAmountFa(digits);
+    });
+
+    applyFormat();
+  }
+
+  // -------------------------
+  // Section/category + icons
+  // -------------------------
+  function normFa(s){
+    return String(s ?? "")
+      .replace(/\u200c/g,"")
+      .replace(/\s+/g," ")
+      .trim()
+      .toLowerCase();
+  }
+
+  function categorizeQuestion(it){
+    const type = String(it?.type || "").trim();
+    const t = normFa(String(it?.title || ""));
+
+    if (type === "DATE" || type === "DATETIME" || type === "TIME" || /تاریخ|date/.test(t)) return "تاریخ‌ها";
+    if (/(حساب\s*(کدام|چه)\s*(شخص|کسی)|حساب.*(شخص|کسی))/.test(t)) return "اشخاص";
+    if (/(درصد\s*سهم)/.test(t)) return "اشخاص";
+    if (/(سند|رسید|فاکتور)/.test(t)) return "جزئیات و مبلغ";
+    if (/(مرکز|نوع\s*تراکنش|مرکز هزینه|سرفصل|دسته|دسته‌بندی|دسته بندی|طبقه|پروژه|فعالیت|واحد|محل|بخش)/.test(t)) return "دسته‌بندی";
+    if (/(مبلغ|ریال|تومان|هزینه|شماره|کد|جمع)/.test(t)) return "جزئیات و مبلغ";
+    if (/(شرح|توضیح|توضیحات|جزئیات)/.test(t) || type === "PARAGRAPH_TEXT") return "جزئیات و مبلغ";
+    if (/(درخواست‌کننده|درخواست کننده|شخص|اشخاص|کارفرما|پیمانکار|مجری|تامین|تأمین|پرداخت‌کننده|پرداخت کننده)/.test(t)) return "اشخاص";
+
+    return "سایر";
+  }
+
+  function iconSvg(path) {
+    return `<span class="qIcon" aria-hidden="true"><svg viewBox="0 0 24 24">${path}</svg></span>`;
+  }
+
+  function iconSvgForCategory(cat){
+    if (cat === "تاریخ‌ها"){
+      return iconSvg(`<rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M16 3v4M8 3v4M3 11h18"></path>`);
+    }
+    if (cat === "اشخاص"){
+      return iconSvg(`<path d="M20 21a8 8 0 0 0-16 0"></path><circle cx="12" cy="8" r="4"></circle>`);
+    }
+    if (cat === "دسته‌بندی"){
+      return iconSvg(`<path d="M3 10.5V6a2 2 0 0 1 2-2h5"></path><path d="M21 13.5V18a2 2 0 0 1-2 2h-5"></path><path d="M7 10h10"></path><path d="M7 14h10"></path><path d="M7 18h10"></path>`);
+    }
+    if (cat === "جزئیات و مبلغ"){
+      return iconSvg(`<rect x="3" y="6" width="18" height="12" rx="2"></rect><circle cx="12" cy="12" r="2.5"></circle>`);
+    }
+    return iconSvg(`<path d="M4 6h16"></path><path d="M4 12h16"></path><path d="M4 18h16"></path>`);
+  }
+
+  function iconSvgForQuestion(it, cat){
+    const type = String(it?.type || "").trim();
+    const title = String(it?.title || "");
+    const t = normFa(title);
+
+    if (type === "DATE" || type === "DATETIME" || type === "TIME" || /تاریخ|date/.test(t)){
+      return iconSvg(`<rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M16 3v4M8 3v4M3 11h18"></path>`);
+    }
+    if (/(درصد|٪|%|سهم)/.test(t)){
+      return iconSvg(`<path d="M19 5L5 19"></path><circle cx="7" cy="7" r="2"></circle><circle cx="17" cy="17" r="2"></circle>`);
+    }
+    if (/(شرح|توضیح|توضیحات|description|جزئیات)/.test(t) || type === "PARAGRAPH_TEXT"){
+      return iconSvg(`<path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path><path d="M8 13h8"></path><path d="M8 17h8"></path>`);
+    }
+    if (/(سند|رسید|فاکتور|invoice|receipt)/.test(t)){
+      return iconSvg(`<path d="M7 2h10v20l-2-1-2 1-2-1-2 1-2-1-2 1z"></path><path d="M9 7h6"></path><path d="M9 11h6"></path><path d="M9 15h6"></path>`);
+    }
+    if (/(واحد\s*ارز|ارز|currency|fx|نرخ\s*ارز|exchange)/.test(t)){
+      return iconSvg(`<ellipse cx="12" cy="6" rx="7" ry="3"></ellipse><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6"></path><path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"></path>`);
+    }
+    if (/(مبلغ|ریال|تومان|amount|جمع)/.test(t)){
+      return iconSvg(`<rect x="3" y="6" width="18" height="12" rx="2"></rect><circle cx="12" cy="12" r="2.5"></circle>`);
+    }
+    if (cat === "اشخاص" || /(شخص|کارفرما|پیمانکار|مجری|درخواست‌کننده|پرداخت‌کننده)/.test(t)){
+      return iconSvg(`<path d="M20 21a8 8 0 0 0-16 0"></path><circle cx="12" cy="8" r="4"></circle>`);
+    }
+    return iconSvgForCategory(cat);
+  }
+
+  function makeSectionChip(title){
+    const wrap = document.createElement("div");
+    wrap.className = "formSectionChip";
+    wrap.innerHTML = `
+      <div class="section">
+        <div class="line"></div>
+        <div class="title">${escapeHtml(title)}</div>
+        <div class="line"></div>
+      </div>
+    `;
+    return wrap;
+  }
+
+  // -------------------------
+  // State
+  // -------------------------
+  const APP = {
+    email: "",
+    fullName: "",
+    menu: [],
+    currentFormKey: null,
+    currentBundle: null,
+    currentSchema: null,
+    uploads: {} // fieldId -> { state, promise }
+  };
+
+  function _resetUploadTracking_(){
+    APP.uploads = {};
+  }
+
+  function _setUploadState(fieldId, state, promise){
+    APP.uploads[fieldId] = { state, promise: promise || null };
+  }
+
+  function _getUploadEntries_(){
+    return Object.entries(APP.uploads || {});
+  }
+
+  async function _waitForAllUploads_(){
+    const pending = _getUploadEntries_()
+      .map(([_, v]) => v)
+      .filter(v => v && (v.state === "uploading" || v.state === "starting") && v.promise);
+
+    if (!pending.length) return;
+    await Promise.all(pending.map(v => v.promise));
+  }
+
+  // -------------------------
+  // Status + online indicator
+  // -------------------------
+  function setStatus(msg, showDots){
+    const line = qs("#statusLine");
+    const txt  = qs("#statusText");
+    const dots = qs("#statusDots");
+    if (!line || !txt || !dots) return;
+
+    if (!msg){
+      line.style.display = "none";
+      return;
+    }
+    txt.textContent = msg;
+    line.style.display = "flex";
+    dots.style.display = (showDots === false) ? "none" : "inline-flex";
+  }
+
+  function updateOnlineIndicator(){
+    const online = navigator.onLine;
+    const chip = qs("#titleChip");
+    const dot = qs("#netDot");
+    if (chip) chip.classList.toggle("offline", !online);
+    if (dot)  dot.classList.toggle("offline", !online);
+  }
+
+  // -------------------------
+  // Menu helpers
+  // -------------------------
+  function flattenMenuForms(menu){
+    const out = [];
+    (menu || []).forEach(center =>
+      (center.forms || []).forEach(f => out.push({ ...f, __center: center }))
+    );
+    return out;
+  }
+
+  // -------------------------
+  // View switching
+  // -------------------------
+  function showMenuView(){
+    const mv = qs("#menuView");
+    const fv = qs("#formView");
+    const back = qs("#backBtn");
+    const fsh = qs("#formStaticHeader");
+    if (mv) mv.style.display = "block";
+    if (fv) fv.style.display = "none";
+    if (back) back.style.display = "none";
+    if (fsh) fsh.style.display = "none";
+    const ft = qs("#formTitle");
+    const fs = qs("#formSubtitle");
+    if (ft) ft.textContent = "—";
+    if (fs) fs.textContent = "—";
+  }
+
+  function showFormView(){
+    const mv = qs("#menuView");
+    const fv = qs("#formView");
+    const back = qs("#backBtn");
+    const fsh = qs("#formStaticHeader");
+    if (mv) mv.style.display = "none";
+    if (fv) fv.style.display = "block";
+    if (back) back.style.display = "inline-flex";
+    if (fsh) fsh.style.display = "block";
+  }
+
+  // -------------------------
+  // Menu rendering
+  // -------------------------
+  function renderMenu(menu){
+    const container = qs("#menuContainer");
+    if (!container) return;
+    container.innerHTML = "";
+
+    (menu || []).forEach(center => {
+      const centerName = center.TransactionCenterNameFa || center.TransactionCenterKey || "";
+      const section = document.createElement("div");
+      section.innerHTML = `
+        <div class="section">
+          <div class="line"></div>
+          <div class="title">${escapeHtml(centerName)}</div>
+          <div class="line"></div>
+        </div>
+        <div class="cardsGrid"></div>
+      `;
+
+      const grid = section.querySelector(".cardsGrid");
+      const forms = Array.isArray(center.forms) ? center.forms : [];
+
+      forms.forEach(f => {
+        const card = document.createElement("div");
+        card.className = "formCard";
+        card.innerHTML = `<div class="formCardTitle">${escapeHtml(f.formNameFa || f.formKey || "")}</div>`;
+        card.addEventListener("click", () => showForm(f.formKey));
+        grid.appendChild(card);
+      });
+
+      container.appendChild(section);
+    });
+  }
+
+  // -------------------------
+  // Options map
+  // -------------------------
+  function buildOptionsFieldMap(optionsRows){
+    const rows = Array.isArray(optionsRows) ? optionsRows : [];
+    const fieldMap = {};
+
+    rows.forEach(r => {
+      Object.keys(r || {}).forEach(key => {
+        if (!key) return;
+        if (String(key).trim().startsWith("@")) return;
+        const val = String(r[key] ?? "").trim();
+        if (!val) return;
+        if (!fieldMap[key]) fieldMap[key] = new Set();
+        fieldMap[key].add(val);
+      });
+    });
+
+    const out = {};
+    Object.keys(fieldMap).forEach(k => {
+      out[k] = Array.from(fieldMap[k]).sort((a,b)=>String(a).localeCompare(String(b), "fa"));
+    });
+    return out;
+  }
+
+  // -------------------------
+  // Searchable dropdown (same behavior as before)
+  // -------------------------
+  function createSearchDropdown(mountEl, cfg){
+    const wrap = document.createElement("div");
+    wrap.className = "sdWrap";
+
+    const input = document.createElement("input");
+    input.className = "control sdInput";
+    input.type = "text";
+    input.autocomplete = "off";
+    input.placeholder = cfg.placeholder || "جستجو یا انتخاب...";
+
+    const caret = document.createElement("div");
+    caret.className = "sdCaret";
+    caret.textContent = "▾";
+
+    const menu = document.createElement("div");
+    menu.className = "sdMenu";
+
+    const list = document.createElement("div");
+    list.className = "sdList";
+    menu.appendChild(list);
+
+    wrap.appendChild(input);
+    wrap.appendChild(caret);
+    wrap.appendChild(menu);
+    mountEl.appendChild(wrap);
+
+    let options = Array.isArray(cfg.options) ? cfg.options.slice() : [];
+    options.sort((a,b)=>String(a).localeCompare(String(b), "fa"));
+
+    let isOpen = false;
+    let actionNodes = [];
+    let activeIndex = -1;
+    let selectedValue = "";
+    let searchQuery = "";
+    const allowAdd = !!cfg.allowAdd;
+
+    function normalize(s){ return String(s ?? "").trim(); }
+    function normLower(s){ return normalize(s).toLowerCase(); }
+
+    function optionExists(val){
+      const v = normLower(val);
+      return options.some(o => normLower(o) === v);
+    }
+
+    function addOption(val){
+      const v = normalize(val);
+      if (!v) return false;
+      if (optionExists(v)) return false;
+      options.push(v);
+      options.sort((a,b)=>String(a).localeCompare(String(b), "fa"));
+      return true;
+    }
+
+    function setActive(i){
+      if (!actionNodes.length){ activeIndex = -1; return; }
+      activeIndex = Math.max(0, Math.min(i, actionNodes.length - 1));
+      actionNodes.forEach((n, idx) => n.classList.toggle("active", idx === activeIndex));
+      const node = actionNodes[activeIndex];
+      if (node && typeof node.scrollIntoView === "function"){
+        node.scrollIntoView({ block: "nearest" });
+      }
+    }
+
+    function close(){
+      menu.classList.remove("show");
+      isOpen = false;
+      activeIndex = -1;
+      actionNodes = [];
+      input.value = selectedValue || "";
+    }
+
+    function pickValue(v){
+      selectedValue = String(v ?? "");
+      input.value = selectedValue;
+      close();
+    }
+
+    function ensureAddRow(){
+      const old = menu.querySelector(".sdAddRow");
+      if (old) old.remove();
+      if (!allowAdd) return;
+
+      const addRow = document.createElement("div");
+      addRow.className = "sdAddRow";
+
+      const link = document.createElement("div");
+      link.className = "sdAddLink";
+      link.textContent = "➕ افزودن مورد جدید...";
+
+      const toEditMode = (prefill) => {
+        addRow.innerHTML = "";
+        const addInput = document.createElement("input");
+        addInput.className = "sdAddInput";
+        addInput.type = "text";
+        addInput.placeholder = "عنوان مورد جدید...";
+        addInput.value = prefill || "";
+
+        const addBtn = document.createElement("button");
+        addBtn.type = "button";
+        addBtn.className = "sdAddBtn";
+        addBtn.textContent = "+";
+
+        const commit = () => {
+          const v = normalize(addInput.value);
+          if (!v) { addInput.focus(); return; }
+          const added = addOption(v);
+          pickValue(v);
+          if (added && typeof cfg.onAdd === "function") cfg.onAdd(v);
+        };
+
+        addBtn.addEventListener("mousedown", (e) => {
+          e.preventDefault(); e.stopPropagation();
+          commit();
+        });
+
+        addInput.addEventListener("keydown", (e) => {
+          if (e.key === "Enter"){
+            e.preventDefault(); commit();
+          } else if (e.key === "Escape"){
+            e.preventDefault();
+            addRow.innerHTML = "";
+            addRow.appendChild(link);
+          }
+        });
+
+        addRow.appendChild(addInput);
+        addRow.appendChild(addBtn);
+        setTimeout(() => addInput.focus(), 0);
+      };
+
+      link.addEventListener("mousedown", (e) => {
+        e.preventDefault(); e.stopPropagation();
+        toEditMode(searchQuery || "");
+      });
+
+      addRow.appendChild(link);
+      menu.appendChild(addRow);
+    }
+
+    function render(){
+      const q = normalize(searchQuery);
+      const qLower = q.toLowerCase();
+      list.innerHTML = "";
+      actionNodes = [];
+      activeIndex = -1;
+
+      const filtered = options
+        .filter(v => !qLower || String(v).toLowerCase().includes(qLower))
+        .slice(0, 600);
+
+      filtered.forEach(v => {
+        const item = document.createElement("div");
+        item.className = "sdItem";
+        const isSelected = normLower(v) === normLower(selectedValue);
+        if (isSelected) item.classList.add("selected");
+        item.innerHTML = `<span>${escapeHtml(v)}</span><span class="sdMark">✓</span>`;
+        item.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          pickValue(v);
+        });
+        list.appendChild(item);
+        actionNodes.push(item);
+      });
+
+      if (!actionNodes.length){
+        const empty = document.createElement("div");
+        empty.className = "sdEmpty";
+        empty.textContent = "موردی برای نمایش وجود ندارد.";
+        list.appendChild(empty);
+      }
+
+      ensureAddRow();
+
+      let idx = actionNodes.findIndex(n => n.classList.contains("selected"));
+      if (idx < 0) idx = 0;
+      setActive(idx);
+    }
+
+    function open(clearSearch){
+      if (clearSearch){
+        searchQuery = "";
+        input.value = "";
+      }
+      if (!isOpen){
+        menu.classList.add("show");
+        isOpen = true;
+      }
+      render();
+    }
+
+    input.addEventListener("focus", () => open(true));
+    input.addEventListener("input", () => {
+      searchQuery = input.value;
+      if (!isOpen) open(false);
+      else render();
+    });
+
+    input.addEventListener("keydown", (e) => {
+      const key = e.key;
+      if (key === "ArrowDown"){
+        e.preventDefault();
+        if (!isOpen) open(false);
+        else if (actionNodes.length) setActive((activeIndex < 0 ? 0 : activeIndex + 1));
+        return;
+      }
+      if (key === "ArrowUp"){
+        e.preventDefault();
+        if (!isOpen) open(false);
+        else if (actionNodes.length) setActive((activeIndex < 0 ? 0 : activeIndex - 1));
+        return;
+      }
+      if (key === "Enter"){
+        if (!isOpen){
+          open(false);
+          e.preventDefault();
+          return;
+        }
+        if (actionNodes.length && activeIndex >= 0){
+          e.preventDefault();
+          actionNodes[activeIndex].dispatchEvent(new MouseEvent("mousedown", { bubbles:true, cancelable:true }));
+        }
+        return;
+      }
+      if (key === "Escape"){
+        if (isOpen){
+          e.preventDefault();
+          close();
+        }
+        return;
+      }
+    });
+
+    caret.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      if (isOpen) close();
+      else { input.focus(); open(true); }
+    });
+
+    document.addEventListener("mousedown", (e) => {
+      if (!wrap.contains(e.target)) close();
+    });
+
+    const api = {
+      getValue: () => normalize(selectedValue),
+      setValue: (v) => { selectedValue = String(v ?? ""); input.value = selectedValue; },
+      clear: () => { selectedValue=""; searchQuery=""; input.value=""; },
+      setOptions: (arr) => {
+        options = Array.isArray(arr) ? arr.slice() : [];
+        options.sort((a,b)=>String(a).localeCompare(String(b), "fa"));
+        render();
+      }
+    };
+
+    wrap.__sdApi = api;
+    return api;
+  }
+
+  // -------------------------
+  // Resumable upload helper (server chunk PUT)
+  // -------------------------
+  async function resumableUploadToDrive_(uploadUrl, file, onProgress) {
+    const CHUNK_SIZE = 1024 * 1024; // 1MB
+    const total = file.size;
+
+    function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+
+    async function readAsBase64(blob) {
+      return new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onerror = () => reject(fr.error);
+        fr.onload = () => {
+          const s = String(fr.result || "");
+          const idx = s.indexOf("base64,");
+          resolve(idx >= 0 ? s.slice(idx + 7) : s);
+        };
+        fr.readAsDataURL(blob);
+      });
+    }
+
+    let offset = 0;
+    while (offset < total) {
+      const end = Math.min(offset + CHUNK_SIZE, total);
+      if (typeof onProgress === "function") onProgress(Math.floor((offset / total) * 100));
+
+      const chunk = file.slice(offset, end);
+      const b64 = await readAsBase64(chunk);
+
+      let lastErr = null;
+      for (let attempt = 1; attempt <= 5; attempt++) {
+        try {
+          const res = await gsCall("app_putResumableChunkForCurrentUser", uploadUrl, b64, offset, end, total);
+          if (!res || !res.ok) throw new Error(res?.error || "Chunk upload failed");
+          if (res.done) {
+            if (typeof onProgress === "function") onProgress(100);
+            return res.json || {};
+          }
+          lastErr = null;
+          break;
+        } catch (e) {
+          lastErr = e;
+          await sleep(400 * attempt);
+        }
+      }
+      if (lastErr) throw lastErr;
+
+      offset = end;
+    }
+    if (typeof onProgress === "function") onProgress(100);
+    return {};
+  }
+
+  // -------------------------
+  // Jalali picker binding (same as your logic, but safe)
+  // -------------------------
+  const faDigits = ["۰","۱","۲","۳","۴","۵","۶","۷","۸","۹"];
+  function toFaNumber(str){ return String(str).replace(/\d/g, d => faDigits[Number(d)]); }
+  const J_MONTHS = ["فروردین","اردیبهشت","خرداد","تیر","مرداد","شهریور","مهر","آبان","آذر","دی","بهمن","اسفند"];
+  const DOW = ["ش","ی","د","س","چ","پ","ج"];
+  function div(a,b){ return ~~(a/b); }
+  function mod(a,b){ return a - ~~(a/b)*b; }
+
+  function jalCal(jy){
+    const breaks = [-61,9,38,199,426,686,756,818,1111,1181,1210,1635,2060,2097,2192,2262,2324,2394,2456,3178];
+    let bl = breaks.length, gy = jy + 621, leapJ = -14, jp = breaks[0], jm, jump, leap, n, i;
+    if (jy < jp || jy >= breaks[bl-1]) throw new Error("Invalid Jalali year " + jy);
+    for (i=1; i<bl; i++){
+      jm = breaks[i];
+      jump = jm - jp;
+      if (jy < jm) break;
+      leapJ = leapJ + div(jump,33)*8 + div(mod(jump,33),4);
+      jp = jm;
+    }
+    n = jy - jp;
+    leapJ = leapJ + div(n,33)*8 + div(mod(n,33)+3,4);
+    if (mod(jump,33) === 4 && jump - n === 4) leapJ++;
+    const leapG = div(gy,4) - div((div(gy,100)+1)*3,4) - 150;
+    const march = 20 + leapJ - leapG;
+    if (jump - n < 6) n = n - jump + div(jump+4,33)*33;
+    leap = mod(mod(n+1,33)-1,4);
+    if (leap === -1) leap = 4;
+    return { leap: leap, gy: gy, march: march };
+  }
+  function isLeapJalaaliYear(jy){ return jalCal(jy).leap === 0; }
+  function jalaaliMonthLength(jy, jm){
+    if (jm <= 6) return 31;
+    if (jm <= 11) return 30;
+    return isLeapJalaaliYear(jy) ? 30 : 29;
+  }
+  function toGregorian(jy, jm, jd){
+    const r = jalCal(jy);
+    let gy = r.gy, march = r.march;
+    let jDayNo = (jm <= 7) ? ((jm-1)*31) : (((jm-7)*30)+186);
+    jDayNo += (jd-1);
+    let gDayNo = jDayNo + march - 1;
+    gy += 400 * div(gDayNo, 146097);
+    gDayNo = mod(gDayNo, 146097);
+    if (gDayNo > 36524){
+      gy += 100 * div(--gDayNo, 36524);
+      gDayNo = mod(gDayNo, 36524);
+      if (gDayNo >= 365) gDayNo++;
+    }
+    gy += 4 * div(gDayNo, 1461);
+    gDayNo = mod(gDayNo, 1461);
+    if (gDayNo > 365){
+      gy += div(gDayNo-1, 365);
+      gDayNo = mod(gDayNo-1, 365);
+    }
+    let gd = gDayNo + 1;
+    const sal_a = [0,31, ((gy%4===0 && gy%100!==0) || (gy%400===0)) ? 29 : 28,31,30,31,30,31,31,30,31,30,31];
+    let gm;
+    for (gm=1; gm<=12; gm++){
+      const v = sal_a[gm];
+      if (gd <= v) break;
+      gd -= v;
+    }
+    return { gy, gm, gd };
+  }
+  function toJalaali(gy, gm, gd){
+    gy = +gy; gm = +gm; gd = +gd;
+    let gDayNo = 365*(gy-1600) + div(gy-1600+3,4) - div(gy-1600+99,100) + div(gy-1600+399,400);
+    const gMonthDays = [0,31,28,31,30,31,30,31,31,30,31,30,31];
+    for (let i=1; i<gm; ++i) gDayNo += gMonthDays[i];
+    if (gm>2 && ((gy%4===0 && gy%100!==0) || (gy%400===0))) gDayNo++;
+    gDayNo += gd-1;
+    let jDayNo = gDayNo - 79;
+    const jNp = div(jDayNo, 12053);
+    jDayNo = mod(jDayNo, 12053);
+    let jy = 979 + 33*jNp + 4*div(jDayNo,1461);
+    jDayNo = mod(jDayNo,1461);
+    if (jDayNo >= 366){
+      jy += div(jDayNo-1,365);
+      jDayNo = mod(jDayNo-1,365);
+    }
+    let jm, jd;
+    if (jDayNo < 186){
+      jm = 1 + div(jDayNo,31);
+      jd = 1 + mod(jDayNo,31);
+    } else {
+      jm = 7 + div(jDayNo-186,30);
+      jd = 1 + mod(jDayNo-186,30);
+    }
+    return { jy, jm, jd };
+  }
+  function jalaliToWeekdayIndex(jy, jm, jd){
+    const g = toGregorian(jy, jm, jd);
+    const d = new Date(Date.UTC(g.gy, g.gm-1, g.gd, 12, 0, 0));
+    const js = d.getUTCDay();
+    return (js + 1) % 7;
+  }
+  function getTodayJalali(){
+    const now = new Date();
+    return toJalaali(now.getFullYear(), now.getMonth()+1, now.getDate());
+  }
+
+  let pickerTargetInput = null;
+  let todayJ = null;
+  let viewJy = null;
+  let viewJm = null;
+
+  function bindPickerDom(){
+    const pickerModal   = qs("#pickerModal");
+    const gridEl        = qs("#grid");
+    const monthTitleEl  = qs("#monthTitle");
+    const prevBtn       = qs("#prevBtn");
+    const nextBtn       = qs("#nextBtn");
+    const yearSelect    = qs("#yearSelect");
+    const monthSelect   = qs("#monthSelect");
+    const pickerBadge   = qs("#pickerBadge");
+
+    if (!pickerModal || !gridEl || !monthTitleEl || !yearSelect || !monthSelect) return;
+
+    todayJ = getTodayJalali();
+    viewJy = todayJ.jy;
+    viewJm = todayJ.jm;
+
+    function renderPicker(){
+      monthTitleEl.textContent = `${J_MONTHS[viewJm-1]} ${toFaNumber(viewJy)}`;
+      yearSelect.value = String(viewJy);
+      monthSelect.value = String(viewJm);
+
+      gridEl.innerHTML = "";
+
+      for (const d of DOW){
+        const el = document.createElement("div");
+        el.className = "dow";
+        el.textContent = d;
+        gridEl.appendChild(el);
+      }
+
+      const firstIdx = jalaliToWeekdayIndex(viewJy, viewJm, 1);
+      const daysInMonth = jalaaliMonthLength(viewJy, viewJm);
+
+      for (let i=0; i<firstIdx; i++){
+        const b = document.createElement("div");
+        b.className = "day empty";
+        gridEl.appendChild(b);
+      }
+
+      for (let d=1; d<=daysInMonth; d++){
+        const el = document.createElement("div");
+        el.className = "day";
+        el.textContent = toFaNumber(d);
+
+        if (viewJy === todayJ.jy && viewJm === todayJ.jm && d === todayJ.jd){
+          el.classList.add("todayOutline","todayDot");
+        }
+
+        el.addEventListener("click", () => {
+          const val = `${toFaNumber(d)} ${J_MONTHS[viewJm-1]} ${toFaNumber(viewJy)}`;
+          if (pickerTargetInput) pickerTargetInput.value = val;
+          closePicker();
+        });
+
+        gridEl.appendChild(el);
+      }
+    }
+
+    function shiftMonth(delta){
+      let jy = viewJy, jm = viewJm + delta;
+      while (jm < 1){ jm += 12; jy -= 1; }
+      while (jm > 12){ jm -= 12; jy += 1; }
+      viewJy = jy; viewJm = jm;
+      renderPicker();
+    }
+
+    function openPicker(inputEl, label){
+      pickerTargetInput = inputEl;
+      if (pickerBadge) pickerBadge.textContent = String(label || "انتخاب تاریخ");
+      viewJy = todayJ.jy;
+      viewJm = todayJ.jm;
+      pickerModal.classList.add("show");
+      pickerModal.setAttribute("aria-hidden","false");
+      renderPicker();
+    }
+
+    function closePicker(){
+      pickerModal.classList.remove("show");
+      pickerModal.setAttribute("aria-hidden","true");
+      pickerTargetInput = null;
+    }
+
+    window.closePicker = closePicker;
+    window.__openPicker = openPicker;
+
+    // Year options
+    yearSelect.innerHTML = "";
+    const start = todayJ.jy - 7;
+    const end = todayJ.jy + 7;
+    for (let y = start; y <= end; y++){
+      const opt = document.createElement("option");
+      opt.value = String(y);
+      opt.textContent = toFaNumber(y);
+      yearSelect.appendChild(opt);
+    }
+
+    // Month options
+    monthSelect.innerHTML = "";
+    for (let m=1; m<=12; m++){
+      const opt = document.createElement("option");
+      opt.value = String(m);
+      opt.textContent = J_MONTHS[m-1];
+      monthSelect.appendChild(opt);
+    }
+
+    if (prevBtn) prevBtn.addEventListener("click", () => shiftMonth(+1));
+    if (nextBtn) nextBtn.addEventListener("click", () => shiftMonth(-1));
+
+    yearSelect.addEventListener("change", () => { viewJy = Number(yearSelect.value); renderPicker(); });
+    monthSelect.addEventListener("change", () => { viewJm = Number(monthSelect.value); renderPicker(); });
+
+    pickerModal.addEventListener("mousedown", (e) => {
+      if (e.target === pickerModal) closePicker();
+    });
+  }
+
+  // -------------------------
+  // Dynamic form renderer
+  // -------------------------
+  function renderSchemaError(msg){
+    const host = qs("#formShellBody");
+    if (!host) return;
+    host.innerHTML = `
+      <div class="field" style="margin-top:12px;">
+        <div class="labelRow">
+          <div class="label">Schema error</div>
+          <span class="badgeReq">ضروری</span>
+        </div>
+        <div style="font-size:13px; color: rgba(17,24,39,0.75); line-height:1.7;">
+          ${escapeHtml(msg)}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderDynamicForm(schema, optionsRows){
+    const host = qs("#formShellBody");
+    if (!host) return;
+
+    const items = Array.isArray(schema) ? schema : [];
+    const optionsFieldMap = buildOptionsFieldMap(optionsRows);
+
+    if (!items.length){
+      host.innerHTML = `<div class="field" style="margin-top:12px;">No schema items.</div>`;
+      return;
+    }
+
+    host.innerHTML = `
+      <div class="gridForm" id="dynForm"></div>
+      <div class="actions">
+        <button class="btn btnPrimary" type="button" id="btnDynSubmit">ثبت</button>
+        <button class="btn" type="button" id="btnDynClear">پاک کردن فرم</button>
+      </div>
+    `;
+
+    const formHost = qs("#dynForm");
+    if (!formHost) return;
+
+    const isDateItem = (it) => {
+      const type = String(it?.type || "").trim();
+      const title = String(it?.title || "").trim();
+      return (
+        type === "DATE" || type === "DATETIME" || type === "TIME" ||
+        (type === "TEXT" && isDateLikeTitle(title))
+      );
+    };
+
+    const withMeta = items.map((it, idx) => ({ it: it || {}, idx, cat: categorizeQuestion(it || {}) }));
+    const catOrder = ["تاریخ‌ها","اشخاص","دسته‌بندی","جزئیات و مبلغ","سایر"];
+    withMeta.sort((a,b) => {
+      const ai = catOrder.indexOf(a.cat);
+      const bi = catOrder.indexOf(b.cat);
+      const aRank = ai < 0 ? 999 : ai;
+      const bRank = bi < 0 ? 999 : bi;
+      if (aRank !== bRank) return aRank - bRank;
+      return a.idx - b.idx;
+    });
+
+    let lastCat = null;
+
+    for (let k = 0; k < withMeta.length; k++){
+      const { it, idx, cat } = withMeta[k];
+
+      if (cat !== lastCat){
+        formHost.appendChild(makeSectionChip(cat));
+        lastCat = cat;
+      }
+
+      const title = String(it.title || "").trim();
+      const type = String(it.type || "").trim();
+      const required = !!it.required;
+      const fieldId = `f_${idx}`;
+      const dateLike = isDateItem(it);
+
+      const isLong =
+        type === "PARAGRAPH_TEXT" ||
+        String(it?.layout || "").toLowerCase() === "full" ||
+        String(it?.span || "").toLowerCase() === "full";
+
+      const spanClass = (!dateLike && isLong) ? "twoColSpan" : "";
+
+      const row = document.createElement("div");
+      row.className = `field ${spanClass}`.trim();
+
+      const iconHtml = iconSvgForQuestion(it, cat);
+
+      row.innerHTML = `
+        <div class="labelRow">
+          <div class="label">${iconHtml}<span>${escapeHtml(title)}</span></div>
+          ${required ? `<span class="badgeReq">ضروری</span>` : `<span class="badgeOpt">اختیاری</span>`}
+        </div>
+        <div id="${fieldId}__control"></div>
+      `;
+
+      const ctlHost = row.querySelector(`#${fieldId}__control`);
+      if (!ctlHost) continue;
+
+      // LIST (options sheet)
+      if (type === "LIST" || it.fromOptions === true){
+        const info = findOptionsHeaderInfoForTitle(optionsFieldMap, title);
+        const header = info.header;
+        const choices = header ? (optionsFieldMap[header] || []) : [];
+        ctlHost.innerHTML = `<div id="${fieldId}"></div>`;
+        const mount = row.querySelector(`#${fieldId}`);
+        createSearchDropdown(mount, {
+          options: choices,
+          placeholder: "جستجو یا انتخاب...",
+          allowAdd: info.allowAdd
+        });
+      }
+
+      // MULTIPLE_CHOICE (Other-aware)
+      else if (type === "MULTIPLE_CHOICE"){
+        const choices = Array.isArray(it.choices) ? it.choices : [];
+        const hasOther = !!it.hasOther;
+
+        if (hasOther){
+          const OTHER_LABEL = "سایر";
+          const uiChoices = choices.slice();
+          if (!uiChoices.some(x => String(x).trim() === OTHER_LABEL)) uiChoices.push(OTHER_LABEL);
+
+          ctlHost.innerHTML = `
+            <div id="${fieldId}" class="mcWrap" style="display:flex; flex-direction:column; gap:10px;">
+              <div class="mcRow" style="display:flex; flex-wrap:wrap; gap:10px;">
+                ${uiChoices.map((c, i) => {
+                  const id = `${fieldId}__opt_${i}`;
+                  return `
+                    <label for="${id}" style="display:inline-flex; align-items:center; gap:8px; cursor:pointer; user-select:none; font-weight:900;">
+                      <input type="radio" name="${fieldId}__radio" id="${id}" value="${escapeHtml(c)}" style="accent-color:#1e5bd7;">
+                      <span>${escapeHtml(c)}</span>
+                    </label>
+                  `;
+                }).join("")}
+              </div>
+              <input id="${fieldId}__other" class="control" type="text" placeholder="سایر (بنویسید...)" style="display:none;" />
+              <input id="${fieldId}__value" type="hidden" value="">
+            </div>
+          `;
+
+          const wrap = row.querySelector(`#${fieldId}`);
+          const otherInput = row.querySelector(`#${fieldId}__other`);
+          const hiddenVal = row.querySelector(`#${fieldId}__value`);
+          const radios = wrap ? Array.from(wrap.querySelectorAll(`input[type="radio"][name="${fieldId}__radio"]`)) : [];
+
+          const setFinalValue = (v) => { if (hiddenVal) hiddenVal.value = String(v || "").trim(); };
+
+          const updateFromState = () => {
+            const picked = radios.find(r => r.checked);
+            const pickedVal = picked ? String(picked.value || "").trim() : "";
+
+            if (pickedVal === OTHER_LABEL){
+              if (otherInput){
+                otherInput.style.display = "block";
+                setFinalValue(otherInput.value);
+              } else {
+                setFinalValue("");
+              }
+            } else {
+              if (otherInput){
+                otherInput.style.display = "none";
+                otherInput.value = "";
+              }
+              setFinalValue(pickedVal);
+            }
+          };
+
+          radios.forEach(r => r.addEventListener("change", () => {
+            updateFromState();
+            if (otherInput && radios.some(x => x.checked && String(x.value).trim() === OTHER_LABEL)){
+              otherInput.focus();
+            }
+          }));
+
+          if (otherInput){
+            otherInput.addEventListener("input", () => {
+              const picked = radios.find(r => r.checked);
+              const pickedVal = picked ? String(picked.value || "").trim() : "";
+              if (pickedVal === OTHER_LABEL){
+                setFinalValue(otherInput.value);
+              }
+            });
+          }
+
+          // IMPORTANT: initialize hidden value
+          updateFromState();
+
+        } else {
+          ctlHost.innerHTML = `<div id="${fieldId}"></div>`;
+          const mount = row.querySelector(`#${fieldId}`);
+          createSearchDropdown(mount, { options: choices, placeholder: "انتخاب..." });
+        }
+      }
+
+      // PARAGRAPH_TEXT
+      else if (type === "PARAGRAPH_TEXT"){
+        ctlHost.innerHTML = `<textarea id="${fieldId}" class="control" ${required ? "required" : ""} rows="4"></textarea>`;
+      }
+
+      // DATE-like
+      else if (dateLike){
+        ctlHost.innerHTML = `
+          <input id="${fieldId}" class="control" ${required ? "required" : ""} type="text"
+            placeholder="انتخاب تاریخ..." readonly>
+        `;
+      }
+
+      // FILE_UPLOAD
+      else if (type === "FILE_UPLOAD") {
+        ctlHost.innerHTML = `
+          <div class="fuWrap">
+            <div class="fuRight">
+              <button type="button" class="fuBtn" id="${fieldId}__btn">انتخاب فایل</button>
+              <div class="fuName" id="${fieldId}__name">فایلی انتخاب نشده</div>
+            </div>
+          </div>
+          <input id="${fieldId}" class="fuNativeInput" ${required ? "required" : ""} type="file">
+          <input id="${fieldId}__drive" type="hidden">
+          <div id="${fieldId}__status" style="margin-top:8px; font-size:12.5px; color: rgba(17,24,39,0.65); font-weight:800;"></div>
+        `;
+
+        const fileInput = row.querySelector(`#${fieldId}`);
+        const pickBtn   = row.querySelector(`#${fieldId}__btn`);
+        const nameEl    = row.querySelector(`#${fieldId}__name`);
+        const hidden    = row.querySelector(`#${fieldId}__drive`);
+        const status    = row.querySelector(`#${fieldId}__status`);
+
+        if (pickBtn && fileInput) pickBtn.addEventListener("click", () => fileInput.click());
+
+        if (fileInput){
+          fileInput.addEventListener("change", () => {
+
+            fileInput.__uploadPromise = (async () => {
+              const files = Array.from(fileInput.files || []);
+              if (!files.length){
+                if (hidden) hidden.value = "";
+                if (status) status.textContent = "";
+                if (nameEl) nameEl.textContent = "فایلی انتخاب نشده";
+                _setUploadState(fieldId, "idle", null);
+                return { ok: true, skipped: true };
+              }
+
+              const file = files[0];
+              if (nameEl) nameEl.textContent = file.name || "فایل انتخاب شد";
+
+              try{
+                if (status) status.textContent = "در حال آماده‌سازی آپلود...";
+                _setUploadState(fieldId, "starting", null);
+
+                const uploadPromise = (async () => {
+                  const marker = (window.crypto && crypto.randomUUID)
+                    ? crypto.randomUUID().slice(0,8)
+                    : String(Date.now()).slice(-8);
+
+                  const session = await gsCall(
+                    "app_createResumableUploadSessionForCurrentUser",
+                    APP.currentFormKey,
+                    title,
+                    file.name,
+                    file.type || "application/octet-stream",
+                    marker
+                  );
+
+                  if (!session || !session.ok) throw new Error(session?.error || "Upload session failed");
+
+                  if (status) status.textContent = "در حال آپلود... ۰٪";
+                  _setUploadState(fieldId, "uploading", null);
+
+                  let fileRes;
+
+                  try {
+                    fileRes = await resumableUploadToDrive_(session.uploadUrl, file, (p) => {
+                      if (status) status.textContent = `در حال آپلود... ${toFaDigits(String(p))}٪`;
+                    });
+                  } catch (e1) {
+                    console.warn("Upload failed, restarting session once...", e1);
+                    if (status) status.textContent = "خطا در اتصال... تلاش مجدد";
+
+                    const session2 = await gsCall(
+                      "app_createResumableUploadSessionForCurrentUser",
+                      APP.currentFormKey,
+                      title,
+                      file.name,
+                      file.type || "application/octet-stream",
+                      marker
+                    );
+
+                    if (!session2 || !session2.ok) throw new Error(session2?.error || "Retry upload session failed");
+
+                    fileRes = await resumableUploadToDrive_(session2.uploadUrl, file, (p) => {
+                      if (status) status.textContent = `در حال آپلود... ${toFaDigits(String(p))}٪`;
+                    });
+                  }
+
+                  const fileId = (fileRes && fileRes.id) ? fileRes.id : "";
+                  const viewLink = fileId ? `https://drive.google.com/file/d/${fileId}/view` : "";
+
+                  if (hidden) hidden.value = viewLink || fileId;
+                  if (status) status.textContent = "✅ آپلود کامل شد";
+                  _setUploadState(fieldId, "done", null);
+
+                  return { ok: true, fileId, viewLink };
+                })();
+
+                _setUploadState(fieldId, "uploading", uploadPromise);
+                fileInput.__uploadPromise = uploadPromise;
+                return await uploadPromise;
+
+              } catch (e){
+                console.error(e);
+                if (hidden) hidden.value = "";
+                if (status) status.textContent = "❌ آپلود ناموفق بود";
+                _setUploadState(fieldId, "error", null);
+                throw new Error((e && e.message) ? e.message : String(e));
+              }
+            })().catch(err => {
+              _setUploadState(fieldId, "error", null);
+              alert("Upload error: " + (err && err.message ? err.message : err));
+              return { ok: false, error: (err && err.message) ? err.message : String(err) };
+            });
+
+          });
+        }
+      }
+
+      // Default TEXT
+      else {
+        const isAmount = isAmountTitle(title);
+        ctlHost.innerHTML = `
+          <input id="${fieldId}" class="control" ${required ? "required" : ""} type="text" ${isAmount ? 'inputmode="numeric"' : ""}>
+        `;
+        if (isAmount){
+          const inp = row.querySelector(`#${fieldId}`);
+          attachAmountInputBehavior(inp);
+        }
+      }
+
+      formHost.appendChild(row);
+
+      // Bind date picker open
+      if (dateLike){
+        const input = row.querySelector(`#${fieldId}`);
+        if (input){
+          input.addEventListener("click", () => {
+            if (typeof window.__openPicker === "function") window.__openPicker(input, title);
+          });
+        }
+      }
+    }
+
+    // Buttons
+    const submitBtn = qs("#btnDynSubmit");
+    const clearBtn  = qs("#btnDynClear");
+
+    if (submitBtn){
+      submitBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (typeof window.submitForm === "function") window.submitForm();
+      });
+    }
+    if (clearBtn){
+      clearBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        clearForm();
+      });
+    }
+  }
+
+  // -------------------------
+  // Form open / schema fetch (race-safe)
+  // -------------------------
+  let __formLoadToken = 0;
+
+  async function showForm(formKey){
+    const myToken = ++__formLoadToken;
+
+    APP.currentFormKey = String(formKey || "").trim();
+    APP.currentBundle = null;
+    APP.currentSchema = null;
+
+    // IMPORTANT: reset upload tracking when opening a new form
+    _resetUploadTracking_();
+
+    showFormView();
+
+    const host = qs("#formShellBody");
+    if (host){
+      host.innerHTML = `
+        <div class="field" style="margin-top:12px;">
+          <div class="labelRow">
+            <div class="label">در حال بارگذاری فرم…</div>
+            <span class="badgeOpt">لطفاً صبر کنید</span>
+          </div>
+          <div style="font-size:13px; color: rgba(17,24,39,0.70); line-height:1.7;">
+            اطلاعات فرم در حال دریافت است.
+          </div>
+        </div>
+      `;
+    }
+
+    setStatus("در حال بارگذاری فرم", true);
+
+    const titleEl = qs("#formTitle");
+    const subEl   = qs("#formSubtitle");
+    if (titleEl) titleEl.textContent = "—";
+    if (subEl)   subEl.textContent = "—";
+
+    let bundle;
+const cacheKey = "__UFRP_BUNDLE_CACHE__:" + APP.currentFormKey;
+
+try {
+  bundle = await gsCall("app_getFormBundleForCurrentUser", APP.currentFormKey);
+
+  // ✅ Cache bundle for offline use
+  try {
+    localStorage.setItem(cacheKey, JSON.stringify({
+      savedAt: new Date().toISOString(),
+      data: bundle
+    }));
+    console.log("Bundle cached ✅", APP.currentFormKey);
+  } catch (cacheErr) {
+    console.warn("Bundle cache failed:", cacheErr);
+  }
+
+} catch (e) {
+  console.warn("Bundle fetch failed. Trying cache...", e);
+
+  // ✅ Try using cached bundle
+  try {
+    const raw = localStorage.getItem(cacheKey);
+    const cached = raw ? JSON.parse(raw) : null;
+    const data = cached && cached.data ? cached.data : null;
+
+    if (data && data.ok) {
+      console.warn("Using cached bundle (offline) ✅", APP.currentFormKey, cached?.savedAt || "");
+      bundle = data;
+    } else {
+      bundle = null;
+    }
+  } catch (err) {
+    console.error(err);
+    bundle = null;
+  }
+}
+
+    if (myToken !== __formLoadToken) return;
+
+    if (!bundle || !bundle.ok){
+      if (titleEl) titleEl.textContent = "خطا";
+      if (subEl)   subEl.textContent = bundle?.error || "خطا در دریافت اطلاعات فرم";
+      if (host){
+        host.innerHTML = `
+          <div class="field" style="margin-top:12px;">
+            <div class="labelRow">
+              <div class="label">خطا</div>
+              <span class="badgeReq">مشکل</span>
+            </div>
+            <div style="font-size:13px; color: rgba(17,24,39,0.75); line-height:1.7;">
+              ${escapeHtml(bundle?.error || "خطا در دریافت اطلاعات فرم")}
+            </div>
+          </div>
+        `;
+      }
+      setStatus("", false);
+      return;
+    }
+
+    APP.currentBundle = bundle;
+
+    const centerName = bundle.center?.TransactionCenterNameFa || bundle.center?.TransactionCenterKey || "";
+    const formName   = bundle.form?.formNameFa || bundle.formKey || APP.currentFormKey;
+
+    if (titleEl) titleEl.textContent = formName;
+    if (subEl)   subEl.textContent = centerName;
+
+    if (host){
+      host.innerHTML = `
+        <div class="field" style="margin-top:12px;">
+          <div class="labelRow">
+            <div class="label">در حال بارگذاری سوالات…</div>
+            <span class="badgeOpt">لطفاً صبر کنید</span>
+          </div>
+          <div style="font-size:13px; color: rgba(17,24,39,0.70); line-height:1.7;">
+            ساختار فرم در حال دریافت است.
+          </div>
+        </div>
+      `;
+    }
+
+// -------------------------
+// ✅ Schema: prefer bundle schema, otherwise fetch (online), then cache
+// -------------------------
+if (myToken !== __formLoadToken) return;
+
+// 1) Try schema already inside bundle (from cache or from prefetch)
+let schema =
+  (bundle && (
+    bundle.schema ||
+    bundle.formSchema ||
+    bundle.currentSchema ||
+    (bundle.form && (bundle.form.schema || bundle.form.formSchema || bundle.form.currentSchema))
+  )) || null;
+
+// Normalize if it’s wrapped
+if (schema && !Array.isArray(schema)) {
+  schema = schema.schema || schema.questions || schema.items || null;
+}
+
+// 2) If missing schema and we're ONLINE -> fetch schema now (priority for opened form)
+if (!schema) {
+  if (!navigator.onLine) {
+    console.error("Schema missing in bundle (offline):", bundle);
+    renderSchemaError("Schema not found in cached bundle");
+    setStatus("", false);
+    return;
+  }
+
+  let schemaRes;
+  try {
+    schemaRes = await gsCall("app_getFormSchemaForCurrentUser", APP.currentFormKey);
+  } catch (e) {
+    console.error(e);
+    schemaRes = null;
+  }
+
+  if (myToken !== __formLoadToken) return;
+
+  if (!schemaRes || !schemaRes.ok) {
+    renderSchemaError(schemaRes?.error || "خطا در دریافت اسکیمای فرم");
+    setStatus("", false);
+    return;
+  }
+
+  schema = schemaRes.schema || [];
+}
+
+// 3) Save schema into bundle + cache (so next time offline works)
+APP.currentSchema = schema;
+APP.currentBundle = bundle;
+
+// Attach schema onto bundle object
+try { bundle.schema = schema; } catch (_) {}
+
+// Update the cached bundle entry (or create it)
+try {
+  const cacheKey = "__UFRP_BUNDLE_CACHE__:" + APP.currentFormKey;
+
+  const raw = localStorage.getItem(cacheKey);
+  const cached = raw ? JSON.parse(raw) : null;
+  const data = cached && cached.data ? cached.data : null;
+
+  if (data && typeof data === "object") {
+    data.schema = schema;
+    localStorage.setItem(cacheKey, JSON.stringify({
+      savedAt: new Date().toISOString(),
+      data: data
+    }));
+    console.log("Bundle schema saved ✅", APP.currentFormKey);
+  } else {
+    localStorage.setItem(cacheKey, JSON.stringify({
+      savedAt: new Date().toISOString(),
+      data: Object.assign({}, bundle, { schema })
+    }));
+    console.log("Bundle+schema cached ✅", APP.currentFormKey);
+  }
+} catch (e) {
+  console.warn("Saving schema to bundle cache failed:", e);
+}
+
+// 4) Render
+renderDynamicForm(APP.currentSchema, bundle.options?.rows || []);
+setStatus("", false);
+
+try{
+  const scrollArea = qs("#scrollArea");
+  if (scrollArea) scrollArea.scrollTo({ top: 0, behavior: "smooth" });
+}catch(_){}
+}
+
+  // -------------------------
+  // Back + Clear
+  // -------------------------
+  function backToMenu(){
+    APP.currentFormKey = null;
+    APP.currentBundle = null;
+    APP.currentSchema = null;
+    _resetUploadTracking_();
+    showMenuView();
+    setStatus("", false);
+    try{
+      const scrollArea = qs("#scrollArea");
+      if (scrollArea) scrollArea.scrollTo({ top: 0, behavior: "smooth" });
+    }catch(_){}
+  }
+
+  function clearForm(){
+    const root = qs("#dynForm") || qs("#formShellBody") || qs("#formView") || document;
+    if (!root) return;
+
+    // Reset upload tracking on clear
+    _resetUploadTracking_();
+
+    root.querySelectorAll("input").forEach(el => {
+      const t = (el.type || "").toLowerCase();
+      if (t === "checkbox" || t === "radio") el.checked = false;
+      else el.value = "";
+      if (el.dataset && el.dataset.rawDigits != null) el.dataset.rawDigits = "";
+      if (el.classList && el.classList.contains("fuNativeInput")) {
+        try { el.value = ""; } catch(_) {}
+        el.__uploadPromise = null;
+      }
+    });
+
+    root.querySelectorAll("textarea").forEach(el => el.value = "");
+    root.querySelectorAll("select").forEach(el => { el.selectedIndex = 0; });
+
+    root.querySelectorAll(".sdWrap").forEach(wrap => {
+      if (wrap && wrap.__sdApi && typeof wrap.__sdApi.clear === "function") {
+        wrap.__sdApi.clear();
+      } else {
+        const inp = wrap.querySelector(".sdInput");
+        if (inp) inp.value = "";
+      }
+      const menu = wrap.querySelector(".sdMenu");
+      if (menu) menu.classList.remove("show");
+    });
+
+    root.querySelectorAll(".fuWrap").forEach(wrap => {
+      const nameEl = wrap.querySelector(".fuName");
+      if (nameEl) nameEl.textContent = "فایلی انتخاب نشده";
+    });
+
+    root.querySelectorAll("input[id$='__drive']").forEach(el => { el.value = ""; });
+    root.querySelectorAll("div[id$='__status']").forEach(el => { el.textContent = ""; });
+    root.querySelectorAll("input[id$='__value']").forEach(el => { el.value = ""; });
+  }
+
+  // -------------------------
+  // Validation + collect
+  // -------------------------
+  function validateRequiredFields_(schema){
+    const missing = [];
+    for (let i = 0; i < schema.length; i++){
+      const it = schema[i] || {};
+      if (!it.required) continue;
+
+      const fieldId = `f_${i}`;
+      const type = String(it.type || "").trim();
+      const title = String(it.title || "").trim();
+
+      if (type === "FILE_UPLOAD"){
+        const hidden = document.getElementById(fieldId + "__drive");
+        const hv = String(hidden?.value || "").trim();
+        if (!hv) missing.push("• " + title);
+        continue;
+      }
+
+      if (type === "MULTIPLE_CHOICE"){
+        const hiddenVal = document.getElementById(fieldId + "__value");
+        if (hiddenVal){
+          const v = String(hiddenVal.value || "").trim();
+          if (!v) missing.push("• " + title);
+          continue;
+        }
+      }
+
+      const ddHolder = document.getElementById(fieldId);
+      if (ddHolder && ddHolder.querySelector && ddHolder.querySelector(".sdWrap")){
+        const wrap = ddHolder.querySelector(".sdWrap");
+        const v = wrap?.__sdApi?.getValue ? wrap.__sdApi.getValue() : "";
+        if (!String(v || "").trim()) missing.push("• " + title);
+        continue;
+      }
+
+      const el = document.getElementById(fieldId);
+      if (!el) continue;
+      const v = String(el.value || "").trim();
+      if (!v) missing.push("• " + title);
+    }
+    return missing;
+  }
+
+  function collectAnswers_(schema){
+    const out = [];
+    for (let i = 0; i < schema.length; i++){
+      const it = schema[i] || {};
+      const fieldId = `f_${i}`;
+      const type = String(it.type || "").trim();
+      const title = String(it.title || "").trim();
+      const itemId = it.itemId;
+
+      let value = "";
+
+      if (type === "FILE_UPLOAD"){
+        const hidden = document.getElementById(fieldId + "__drive");
+        value = String(hidden?.value || "").trim();
+        out.push({ itemId, title, type, value });
+        continue;
+      }
+
+      if (type === "MULTIPLE_CHOICE"){
+        const hiddenVal = document.getElementById(fieldId + "__value");
+        if (hiddenVal){
+          value = String(hiddenVal.value || "").trim();
+          out.push({ itemId, title, type, value });
+          continue;
+        }
+      }
+
+      const ddHolder = document.getElementById(fieldId);
+      if (ddHolder && ddHolder.querySelector && ddHolder.querySelector(".sdWrap")){
+        const wrap = ddHolder.querySelector(".sdWrap");
+        value = wrap?.__sdApi?.getValue ? wrap.__sdApi.getValue() : "";
+        out.push({ itemId, title, type, value });
+        continue;
+      }
+
+      const el = document.getElementById(fieldId);
+      if (el){
+        if (el.dataset && el.dataset.rawDigits != null && String(el.dataset.rawDigits).trim() !== "") {
+          value = String(el.dataset.rawDigits);
+        } else {
+          value = String(el.value || "").trim();
+        }
+      }
+
+      out.push({ itemId, title, type, value });
+    }
+    return out;
+  }
+
+  function showToast_(msg){
+    const t = document.getElementById("toast");
+    if (!t) return;
+    t.textContent = msg || "✅ انجام شد";
+    t.classList.add("show");
+    setTimeout(() => t.classList.remove("show"), 1500);
+  }
+
+  // -------------------------
+  // Submit (AUTO WAITS for uploads)
+  // -------------------------
+  window.submitForm = async function submitForm(){
+
+  if (!navigator.onLine) {
+  console.log("OFFLINE MODE: submit intercepted");
+
+  const answers = collectAnswers_(APP.currentSchema);
+
+  if (window.__OFFLINE__ && typeof window.__OFFLINE__.enqueueSubmission === "function") {
+    const id = await window.__OFFLINE__.enqueueSubmission({
+      formKey: APP.currentFormKey,
+      answers: answers
+    });
+    console.log("Queued submission ID:", id);
+  }
+
+  return;
+}
+
+    try{
+      if (!APP.currentFormKey || !Array.isArray(APP.currentSchema)) {
+        alert("No form is loaded.");
+        return;
+      }
+
+      // 1) Wait for tracked uploads (fast path)
+      try{
+        setStatus("در حال تکمیل آپلود فایل‌ها...", true);
+        await _waitForAllUploads_();
+      }catch(e){
+        setStatus("", false);
+        alert("Upload error: " + (e && e.message ? e.message : e));
+        return;
+      } finally {
+        setStatus("", false);
+      }
+
+      // 2) Validate required
+      const missing = validateRequiredFields_(APP.currentSchema);
+      if (missing.length){
+        alert("Please fill required fields:\n\n" + missing.join("\n"));
+        return;
+      }
+
+      // 3) Submit
+      const answers = collectAnswers_(APP.currentSchema);
+      setStatus("در حال ثبت...", true);
+
+      const res = await gsCall("app_submitFormForCurrentUser", APP.currentFormKey, { answers });
+      if (!res || !res.ok){
+        setStatus("", false);
+        alert(res?.error || "Submit failed.");
+        return;
+      }
+
+      setStatus("", false);
+      showToast_("✅ ثبت شد");
+      clearForm();
+
+    } catch (e){
+      console.error(e);
+      setStatus("", false);
+      alert("Submit error: " + (e && e.message ? e.message : e));
+    }
+  };
+
+ // -------------------------
+  // App init
+  // -------------------------
+  async function appInit(){
+
+  
+    updateOnlineIndicator();
+    window.addEventListener("online", updateOnlineIndicator);
+    window.addEventListener("offline", updateOnlineIndicator);
+
+    // -------------------------
+// Offline sync handler (submit queued items when back online)
+// -------------------------
+if (window.__OFFLINE__ && typeof window.__OFFLINE__.setSyncHandler === "function") {
+  window.__OFFLINE__.setSyncHandler(async (item) => {
+    const p = item && item.payload ? item.payload : null;
+    if (!p || !p.formKey || !p.answers) {
+      console.warn("Invalid queued payload. Dropping item:", item?.id);
+      return true; // drop invalid items so queue doesn't get stuck forever
+    }
+
+    // Submit to server (same endpoint used by normal submit)
+    const res = await gsCall("app_submitFormForCurrentUser", p.formKey, { answers: p.answers });
+
+    if (!res || !res.ok) {
+      // throw => keeps item in queue and stops flush (FIFO)
+      throw new Error(res?.error || "Server submit failed");
+    }
+
+    return true; // success => item removed from queue
+  });
+}
+
+    setStatus("در حال بارگذاری", true);
+let res;
+
+try {
+  res = await gsCall("app_getMenuForCurrentUser");
+
+  // ✅ Cache menu for offline use
+  try {
+    localStorage.setItem("__UFRP_MENU_CACHE__", JSON.stringify({
+      savedAt: new Date().toISOString(),
+      data: res
+    }));
+    console.log("Menu cached ✅");
+  } catch (cacheErr) {
+    console.warn("Menu cache failed:", cacheErr);
+  }
+
+} catch (e) {
+  console.warn("Menu fetch failed. Trying cache...", e);
+
+  // ✅ Try using cached menu
+  try {
+    const raw = localStorage.getItem("__UFRP_MENU_CACHE__");
+    const cached = raw ? JSON.parse(raw) : null;
+    const data = cached && cached.data ? cached.data : null;
+
+    if (data && data.ok) {
+      console.warn("Using cached menu (offline) ✅", cached?.savedAt || "");
+      res = data;
+    } else {
+      setStatus("Error loading menu (no cache)", false);
+      return;
+    }
+  } catch (err) {
+    console.error(err);
+    setStatus("Error loading menu (cache read failed)", false);
+    return;
+  }
+}
+
+if (!res || !res.ok) {
+  setStatus(res?.error || "خطا در دریافت منو", false);
+  return;
+}
+
+    APP.email = res.email || "";
+    APP.menu  = res.menu  || [];
+
+    try{
+      const prof = await gsCall("app_getCurrentUserProfile");
+      if (prof && prof.ok) APP.fullName = (prof.fullName || "").trim();
+    }catch(_){}
+
+    const nameEl = qs("#userFullName");
+    if (nameEl) nameEl.textContent = APP.fullName || APP.email || "";
+
+    renderMenu(APP.menu);
+    // =========================
+// A.1) Collect all formKeys (no fetch yet)
+// =========================
+try {
+  const allForms = flattenMenuForms(APP.menu); // returns [{... formKey ...}, ...]
+  const keys = Array.from(new Set(
+    (allForms || [])
+      .map(f => String(f.formKey || "").trim())
+      .filter(Boolean)
+  ));
+
+  window.__UFRP_ALL_FORM_KEYS__ = keys; // for debugging
+  console.log("UFRP formKeys collected ✅ count =", keys.length, keys);
+} catch (e) {
+  console.warn("UFRP formKeys collect failed:", e);
+  window.__UFRP_ALL_FORM_KEYS__ = [];
+}
+
+// =========================
+// A.2) Background prefetch bundles + cache (non-blocking)
+// =========================
+(function startBackgroundPrefetchBundles(){
+  try {
+    const keys = Array.isArray(window.__UFRP_ALL_FORM_KEYS__) ? window.__UFRP_ALL_FORM_KEYS__ : [];
+    if (!keys.length) return;
+
+    // Only prefetch when online
+    if (!navigator.onLine) {
+      console.log("Prefetch skipped (offline) ✅");
+      return;
+    }
+
+    // Prevent starting twice
+    if (window.__UFRP_PREFETCH_RUNNING__) return;
+    window.__UFRP_PREFETCH_RUNNING__ = true;
+
+    console.log("Prefetch starting ✅ forms =", keys.length);
+
+    // Run after UI settles
+    setTimeout(async () => {
+      let ok = 0, fail = 0;
+
+      for (const k of keys) {
+        // stop if we went offline mid-run
+        if (!navigator.onLine) {
+          console.warn("Prefetch stopped (went offline) ⚠️");
+          break;
+        }
+
+        const cacheKey = "__UFRP_BUNDLE_CACHE__:" + k;
+
+        // Skip if already cached (optional)
+        if (localStorage.getItem(cacheKey)) {
+          // console.log("Prefetch skip (cached) ↪", k);
+          continue;
+        }
+
+        try {
+          const bundleRes = await gsCall("app_getFormBundleForCurrentUser", k);
+
+          if (bundleRes && bundleRes.ok) {
+            localStorage.setItem(cacheKey, JSON.stringify({
+              savedAt: new Date().toISOString(),
+              data: bundleRes
+            }));
+            ok++;
+            console.log("Prefetch cached ✅", k);
+          } else {
+            fail++;
+            console.warn("Prefetch failed ❌", k, bundleRes?.error || "no ok");
+          }
+        } catch (e) {
+          fail++;
+          console.warn("Prefetch error ❌", k, e?.message || e);
+        }
+
+        // Small delay to avoid hammering GAS
+        await new Promise(r => setTimeout(r, 250));
+      }
+
+      console.log("Prefetch finished ✅ ok=", ok, "fail=", fail);
+      window.__UFRP_PREFETCH_RUNNING__ = false;
+    }, 800);
+
+  } catch (e) {
+    console.warn("Prefetch bootstrap failed:", e);
+    window.__UFRP_PREFETCH_RUNNING__ = false;
+  }
+})();
+
+    const forcedKey = (window.__INITIAL_FORM_KEY__ || "").trim();
+    if (forcedKey){
+      await showForm(forcedKey);
+      setStatus("", false);
+      return;
+    }
+
+    const all = flattenMenuForms(APP.menu);
+    if (all.length === 1){
+      await showForm(all[0].formKey);
+    }else{
+      showMenuView();
+      setStatus("", false);
+    }
+  }
+
+  // -------------------------
+  // Public exports
+  // -------------------------
+  window.appInit = appInit;
+  window.showForm = showForm;
+  window.backToMenu = backToMenu;
+  window.clearForm = clearForm;
+
+  // -------------------------
+  // Boot (safe)
+  // -------------------------
+  function safeBoot(){
+    try{
+      bindPickerDom();
+    }catch(e){
+      console.error("Client boot error:", e);
+      try{ setStatus("خطای داخلی در کلاینت", false); }catch(_){}
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", safeBoot);
+  } else {
+    safeBoot();
+  }
+
+})();
+</script>
