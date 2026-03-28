@@ -822,7 +822,8 @@ const server = http.createServer(async (req, res) => {
         createdAt: String(x.createdAt || ""),
         updatedAt: String(x.updatedAt || ""),
         retryCount: Number(x.retryCount || 0),
-        lastError: String(x.lastError || "")
+        lastError: String(x.lastError || ""),
+        answers: Array.isArray(x.answers) ? x.answers : []
       }));
 
       return sendJson(res, 200, {
