@@ -2833,16 +2833,20 @@ window.submitForm = async function submitForm(){
       fileUploadSnapshot: captureFileUploadSnapshot_(APP.currentSchema, submissionUid)
     });
 
-    if (window.OUTBOX && window.OUTBOX.refresh) {
-      await window.OUTBOX.refresh();
-    }
-
     console.log("Queued submission ID:", queuedId);
 
     window.__UFRP_SKIP_PENDING_CLEANUP_ON_CLEAR__ = true;
     clearForm();
     window.__UFRP_SKIP_PENDING_CLEANUP_ON_CLEAR__ = false;
     _clearPendingUid_();
+
+    try {
+      if (window.OUTBOX && window.OUTBOX.refresh) {
+        Promise.resolve()
+          .then(() => window.OUTBOX.refresh())
+          .catch(() => {});
+      }
+    } catch (_) {}
 
     if (navigator.onLine) {
       showToast_("✅ ثبت در پس‌زمینه شروع شد");
