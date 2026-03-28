@@ -357,6 +357,82 @@ function outboxStagePercent_(stageKey){
   );
 }
 
+const __RECENT_OUTBOX_TTL_MS__ = 2 * 60 * 1000;
+
+function getRecentOutboxBridge_(){
+  try {
+    const raw = sessionStorage.getItem("__UFRP_RECENT_OUTBOX__");
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function setRecentOutboxBridge_(items){
+  try {
+    sessionStorage.setItem("__UFRP_RECENT_OUTBOX__", JSON.stringify(Array.isArray(items) ? items : []));
+  } catch (_) {}
+}
+
+function pruneRecentOutboxBridge_(){
+  const now = Date.now();
+  const items = getRecentOutboxBridge_().filter(x => {
+    const t = Number(x?.createdAtMs || 0);
+    return t > 0 && (now - t) < __RECENT_OUTBOX_TTL_MS__;
+  });
+  setRecentOutboxBridge_(items);
+  return items;
+}
+
+function addRecentOutboxBridge_(payload){
+  const submissionUid =
+    String(payload?.submissionUid || "").trim() ||
+    String((((payload?.answers || []).find(a => String(a?.title || "").trim() === "__SubmissionUID") || {}).value) || "").trim();
+
+  if (!submissionUid) return;
+
+  const items = pruneRecentOutboxBridge_().filter(x => String(x?.submissionUid || "").trim() !== submissionUid);
+
+  items.push({
+    submissionUid,
+    formKey: String(payload?.formKey || "").trim(),
+    answers: Array.isArray(payload?.answers) ? payload.answers : [],
+    createdAtMs: Date.now()
+  });
+
+  setRecentOutboxBridge_(items);
+}
+
+function removeRecentOutboxBridgeByUid_(submissionUid){
+  const uid = String(submissionUid || "").trim();
+  if (!uid) return;
+  const items = pruneRecentOutboxBridge_().filter(x => String(x?.submissionUid || "").trim() !== uid);
+  setRecentOutboxBridge_(items);
+}
+
+function normalizeRecentOutboxBridgeItems_(){
+  return pruneRecentOutboxBridge_().map((x) => ({
+    id: "recent-" + String(x?.submissionUid || "").trim(),
+    submissionUid: String(x?.submissionUid || "").trim(),
+    status: "processing",
+    sourceLayer: "recent",
+    uiStageKey: "local_to_server_uploading",
+    uiPercent: outboxStagePercent_("local_to_server_uploading"),
+    uiDeleteAllowed: false,
+    uiErrorText: "",
+    rawOutboxError: "",
+    createdAt: new Date(Number(x?.createdAtMs || Date.now())).toISOString(),
+    updatedAt: new Date(Number(x?.createdAtMs || Date.now())).toISOString(),
+    retryCount: 0,
+    payload: {
+      formKey: String(x?.formKey || "").trim(),
+      submissionUid: String(x?.submissionUid || "").trim(),
+      answers: Array.isArray(x?.answers) ? x.answers : []
+    }
+  }));
+}
+
 function normalizeLocalOutboxItems_(items){
   return (Array.isArray(items) ? items : []).map((x) => {
     const rawStatus = String(x?.status || "queued").trim();
@@ -455,6 +531,7 @@ function normalizeServerOutboxItems_(items){
 async function outboxGetItems(){
   let localItems = [];
   let serverItems = [];
+  const recentItems = normalizeRecentOutboxBridgeItems_();
 
   try {
     if (window.__OFFLINE__ && typeof window.__OFFLINE__.getQueue === "function") {
@@ -474,28 +551,23 @@ async function outboxGetItems(){
 
   const merged = new Map();
 
-  for (const it of localItems) {
-    const key =
-      String(
-        ((it?.payload?.answers || []).find(a => String(a?.title || "").trim() === "__SubmissionUID") || {}).value ||
-        it?.payload?.submissionUid ||
-        it?.id ||
-        ""
-      ).trim() || String(it?.id || "").trim();
+  const getKey = (it) =>
+    String(
+      ((it?.payload?.answers || []).find(a => String(a?.title || "").trim() === "__SubmissionUID") || {}).value ||
+      it?.payload?.submissionUid ||
+      it?.submissionUid ||
+      it?.id ||
+      ""
+    ).trim() || String(it?.id || "").trim();
 
+  for (const it of localItems) {
+    const key = getKey(it);
     if (!key) continue;
     merged.set(key, it);
   }
 
   for (const it of serverItems) {
-    const key =
-      String(
-        ((it?.payload?.answers || []).find(a => String(a?.title || "").trim() === "__SubmissionUID") || {}).value ||
-        it?.payload?.submissionUid ||
-        it?.id ||
-        ""
-      ).trim() || String(it?.id || "").trim();
-
+    const key = getKey(it);
     if (!key) continue;
 
     const prev = merged.get(key);
@@ -508,17 +580,29 @@ async function outboxGetItems(){
     const prevAnswers = Array.isArray(prev?.payload?.answers) ? prev.payload.answers : [];
     const nextAnswers = Array.isArray(it?.payload?.answers) ? it.payload.answers : [];
 
-    const mergedAnswers = nextAnswers.length ? nextAnswers : prevAnswers;
-
     merged.set(key, {
       ...prev,
       ...it,
       payload: {
         ...(prev?.payload || {}),
         ...(it?.payload || {}),
-        answers: mergedAnswers
+        answers: nextAnswers.length ? nextAnswers : prevAnswers
       }
     });
+  }
+
+  for (const it of recentItems) {
+    const key = getKey(it);
+    if (!key) continue;
+    if (!merged.has(key)) {
+      merged.set(key, it);
+    }
+  }
+
+  for (const key of Array.from(merged.keys())) {
+    if (key && !String(key).startsWith("recent-")) {
+      removeRecentOutboxBridgeByUid_(key);
+    }
   }
 
   return Array.from(merged.values());
@@ -529,12 +613,12 @@ async function outboxGetSummary(){
 
   try {
     if (window.__OFFLINE__ && typeof window.__OFFLINE__.getQueueSummary === "function") {
-      const s = await window.__OFFLINE__.getQueueSummary();
+      const q = await window.__OFFLINE__.getQueueSummary();
       local = {
-        total: Number(s?.total || 0),
-        queued: Number(s?.queued || 0),
-        processing: Number(s?.processing || 0),
-        failed: Number(s?.failed || 0)
+        total: Number(q?.total || 0),
+        queued: Number(q?.queued || 0),
+        processing: Number(q?.processing || 0),
+        failed: Number(q?.failed || 0)
       };
     }
   } catch (e) {
@@ -547,10 +631,13 @@ async function outboxGetSummary(){
     console.warn("Server outbox summary failed:", e);
   }
 
+  const recent = normalizeRecentOutboxBridgeItems_();
+  const recentCount = recent.length;
+
   return {
-    total: local.total + server.total,
+    total: local.total + server.total + recentCount,
     queued: local.queued + server.queued,
-    processing: local.processing + server.processing,
+    processing: local.processing + server.processing + recentCount,
     failed: local.failed + server.failed,
     sent: Number(server.sent || 0),
     localTotal: local.total,
@@ -561,10 +648,10 @@ async function outboxGetSummary(){
     serverQueued: server.queued,
     serverProcessing: server.processing,
     serverFailed: server.failed,
-    serverSent: server.sent
+    serverSent: server.sent,
+    recentTotal: recentCount
   };
 }
-
 function outboxAdd(formKey){
   try { updateOutboxChip(); } catch(_) {}
   return null;
@@ -2962,6 +3049,14 @@ window.submitForm = async function submitForm(){
       answers: answers,
       fileUploadSnapshot: captureFileUploadSnapshot_(APP.currentSchema, submissionUid)
     });
+
+    try {
+      addRecentOutboxBridge_({
+        formKey: APP.currentFormKey,
+        submissionUid: submissionUid,
+        answers: answers
+      });
+    } catch (_) {}
 
     console.log("Queued submission ID:", queuedId);
 
