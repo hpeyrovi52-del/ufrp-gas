@@ -680,6 +680,36 @@ async function updateOutboxChip(){
   const txt  = document.getElementById("outboxText");
   if (!chip || !txt) return;
 
+  let localQuick = { total: 0, queued: 0, processing: 0, failed: 0 };
+  try {
+    if (window.__OFFLINE__ && typeof window.__OFFLINE__.getQueueSummary === "function") {
+      const q = await window.__OFFLINE__.getQueueSummary();
+      localQuick = {
+        total: Number(q?.total || 0),
+        queued: Number(q?.queued || 0),
+        processing: Number(q?.processing || 0),
+        failed: Number(q?.failed || 0)
+      };
+    }
+  } catch (_) {}
+
+  if ((localQuick.total || 0) > 0) {
+    chip.style.display = "inline-flex";
+    chip.classList.remove("pending", "error");
+
+    const quickActive = Number(localQuick.queued || 0) + Number(localQuick.processing || 0);
+    const quickFailed = Number(localQuick.failed || 0);
+
+    if (quickFailed > 0) {
+      txt.textContent = `${toFaDigits(String(quickFailed))} ارسال ناموفق`;
+      chip.classList.add("error");
+    } else if (quickActive > 0) {
+      txt.textContent =
+        `${toFaDigits(String(quickActive))} فرم در حال پردازش میباشد`;
+      chip.classList.add("pending");
+    }
+  }
+
   const s = await outboxGetSummary();
 
   if ((s.total || 0) <= 0) {
