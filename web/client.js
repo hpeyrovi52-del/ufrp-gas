@@ -472,7 +472,56 @@ async function outboxGetItems(){
     console.warn("Server outbox items failed:", e);
   }
 
-  return [...localItems, ...serverItems];
+  const merged = new Map();
+
+  for (const it of localItems) {
+    const key =
+      String(
+        ((it?.payload?.answers || []).find(a => String(a?.title || "").trim() === "__SubmissionUID") || {}).value ||
+        it?.payload?.submissionUid ||
+        it?.id ||
+        ""
+      ).trim() || String(it?.id || "").trim();
+
+    if (!key) continue;
+    merged.set(key, it);
+  }
+
+  for (const it of serverItems) {
+    const key =
+      String(
+        ((it?.payload?.answers || []).find(a => String(a?.title || "").trim() === "__SubmissionUID") || {}).value ||
+        it?.payload?.submissionUid ||
+        it?.id ||
+        ""
+      ).trim() || String(it?.id || "").trim();
+
+    if (!key) continue;
+
+    const prev = merged.get(key);
+
+    if (!prev) {
+      merged.set(key, it);
+      continue;
+    }
+
+    const prevAnswers = Array.isArray(prev?.payload?.answers) ? prev.payload.answers : [];
+    const nextAnswers = Array.isArray(it?.payload?.answers) ? it.payload.answers : [];
+
+    const mergedAnswers = nextAnswers.length ? nextAnswers : prevAnswers;
+
+    merged.set(key, {
+      ...prev,
+      ...it,
+      payload: {
+        ...(prev?.payload || {}),
+        ...(it?.payload || {}),
+        answers: mergedAnswers
+      }
+    });
+  }
+
+  return Array.from(merged.values());
 }
 async function outboxGetSummary(){
   let local = { total: 0, queued: 0, processing: 0, failed: 0 };
