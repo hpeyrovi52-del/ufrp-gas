@@ -340,6 +340,118 @@ async function fetchServerQueueSummary(){
   }
 }
 
+function isRetryableServerOutboxError_(errMsg){
+  return /eai_again|getaddrinfo|dns|offline|network|timeout|timed out|failed to fetch|502|503|504|سهمیه پهنای باند|مجاز فراتر|uploadType=resumable/i.test(
+    String(errMsg || "").trim()
+  );
+}
+
+function outboxStagePercent_(stageKey){
+  return (
+    stageKey === "local_initial_queue" ? 10 :
+    stageKey === "local_to_server_uploading" ? 25 :
+    stageKey === "server_to_google_queue" ? 40 :
+    stageKey === "server_to_google_uploading" ? 70 :
+    stageKey === "google_finalizing" ? 90 :
+    stageKey === "done" ? 100 : 0
+  );
+}
+
+function normalizeLocalOutboxItems_(items){
+  return (Array.isArray(items) ? items : []).map((x) => {
+    const rawStatus = String(x?.status || "queued").trim();
+
+    const stageKey =
+      rawStatus === "processing" ? "local_to_server_uploading" :
+      rawStatus === "done" ? "done" :
+      rawStatus === "failed" ? "failed_non_retryable" :
+      "local_initial_queue";
+
+    return {
+      ...x,
+      sourceLayer: "local",
+      uiStageKey: stageKey,
+      uiPercent: outboxStagePercent_(stageKey),
+      uiDeleteAllowed: stageKey === "failed_non_retryable",
+      uiErrorText:
+        stageKey === "failed_non_retryable"
+          ? "خطای غیر قابل رفع، مورد مجدد باید از طرف کاربر بارگذاری شود"
+          : "",
+      rawOutboxError: String(x?.lastError || "").trim(),
+      lastError:
+        stageKey === "failed_non_retryable"
+          ? "خطای غیر قابل رفع، مورد مجدد باید از طرف کاربر بارگذاری شود"
+          : ""
+    };
+  });
+}
+
+function normalizeServerOutboxItems_(items){
+  return (Array.isArray(items) ? items : []).map((x) => {
+    const bucket = String(x?.bucket || "").trim();
+    const rawStatus = String(x?.status || "").trim();
+    const rawErr = String(x?.lastError || "").trim();
+    const retryableServerWait = isRetryableServerOutboxError_(rawErr);
+
+    let compatStatus = "queued";
+    let stageKey = "server_to_google_queue";
+
+    if (bucket === "sent") {
+      compatStatus = "done";
+      stageKey = "done";
+    } else if (bucket === "processing" && (rawStatus === "submitting_gas" || rawStatus === "submitted_gas")) {
+      compatStatus = "processing";
+      stageKey = "google_finalizing";
+    } else if (bucket === "processing") {
+      compatStatus = "processing";
+      stageKey = "server_to_google_uploading";
+    } else if (bucket === "failed" && !retryableServerWait) {
+      compatStatus = "failed";
+      stageKey = "failed_non_retryable";
+    } else {
+      compatStatus = "queued";
+      stageKey = "server_to_google_queue";
+    }
+
+    const answers = Array.isArray(x?.answers) && x.answers.length
+      ? x.answers
+      : [
+          {
+            title: "__SubmissionUID",
+            type: "TEXT",
+            value: String(x?.submissionUid || x?.id || "").trim()
+          }
+        ];
+
+    return {
+      id: String(x?.id || ""),
+      status: compatStatus,
+      lastError:
+        stageKey === "failed_non_retryable"
+          ? "خطای غیر قابل رفع، مورد مجدد باید از طرف کاربر بارگذاری شود"
+          : "",
+      rawOutboxError: rawErr,
+      createdAt: String(x?.createdAt || "").trim(),
+      updatedAt: String(x?.updatedAt || "").trim(),
+      retryCount: Number(x?.retryCount || 0),
+      sourceLayer: "server",
+      uiStageKey: stageKey,
+      uiPercent: outboxStagePercent_(stageKey),
+      uiDeleteAllowed: stageKey === "failed_non_retryable",
+      uiErrorText:
+        stageKey === "failed_non_retryable"
+          ? "خطای غیر قابل رفع، مورد مجدد باید از طرف کاربر بارگذاری شود"
+          : "",
+      serverBucket: bucket,
+      serverRawStatus: rawStatus,
+      payload: {
+        formKey: String(x?.formKey || "").trim(),
+        answers: answers
+      }
+    };
+  });
+}
+
 async function outboxGetItems(){
   let localItems = [];
   let serverItems = [];
@@ -347,7 +459,7 @@ async function outboxGetItems(){
   try {
     if (window.__OFFLINE__ && typeof window.__OFFLINE__.getQueue === "function") {
       const items = await window.__OFFLINE__.getQueue();
-      localItems = Array.isArray(items) ? items : [];
+      localItems = normalizeLocalOutboxItems_(items);
     }
   } catch (e) {
     console.warn("Local outbox items failed:", e);
@@ -355,37 +467,13 @@ async function outboxGetItems(){
 
   try {
     const rawServerItems = await fetchServerQueueItems();
-    serverItems = (Array.isArray(rawServerItems) ? rawServerItems : []).map((x) => ({
-      id: String(x?.id || ""),
-      status:
-        String(x?.bucket || "").trim() === "failed" ? "failed" :
-        String(x?.bucket || "").trim() === "processing" ? "processing" :
-        String(x?.bucket || "").trim() === "queue" ? "queued" :
-        String(x?.bucket || "").trim() === "sent" ? "done" :
-        String(x?.status || "queued").trim(),
-      lastError: String(x?.lastError || "").trim(),
-      createdAt: String(x?.createdAt || "").trim(),
-      updatedAt: String(x?.updatedAt || "").trim(),
-      retryCount: Number(x?.retryCount || 0),
-      sourceLayer: "server",
-      payload: {
-        formKey: String(x?.formKey || "").trim(),
-        answers: [
-          {
-            title: "__SubmissionUID",
-            type: "TEXT",
-            value: String(x?.submissionUid || x?.id || "").trim()
-          }
-        ]
-      }
-    }));
+    serverItems = normalizeServerOutboxItems_(rawServerItems);
   } catch (e) {
     console.warn("Server outbox items failed:", e);
   }
 
   return [...localItems, ...serverItems];
 }
-
 async function outboxGetSummary(){
   let local = { total: 0, queued: 0, processing: 0, failed: 0 };
   let server = { total: 0, queued: 0, processing: 0, failed: 0, sent: 0 };
