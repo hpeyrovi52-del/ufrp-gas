@@ -392,11 +392,23 @@ function addRecentOutboxBridge_(payload){
 
   if (!submissionUid) return;
 
+  let formNameFa = String(payload?.formNameFa || "").trim();
+
+  if (!formNameFa) {
+    try {
+      const fk = String(payload?.formKey || "").trim();
+      const allForms = typeof flattenMenuForms === "function" ? flattenMenuForms(APP.menu) : [];
+      const found = allForms.find(f => String(f?.formKey || "").trim() === fk);
+      formNameFa = String(found?.formNameFa || found?.titleFa || found?.title || "").trim();
+    } catch (_) {}
+  }
+
   const items = pruneRecentOutboxBridge_().filter(x => String(x?.submissionUid || "").trim() !== submissionUid);
 
   items.push({
     submissionUid,
     formKey: String(payload?.formKey || "").trim(),
+    formNameFa: formNameFa,
     answers: Array.isArray(payload?.answers) ? payload.answers : [],
     createdAtMs: Date.now()
   });
@@ -427,10 +439,91 @@ function normalizeRecentOutboxBridgeItems_(){
     retryCount: 0,
     payload: {
       formKey: String(x?.formKey || "").trim(),
+      formNameFa: String(x?.formNameFa || "").trim(),
       submissionUid: String(x?.submissionUid || "").trim(),
       answers: Array.isArray(x?.answers) ? x.answers : []
     }
   }));
+}
+
+function outboxStageText_(stageKey){
+  return (
+    stageKey === "local_initial_queue" ? "در صف بارگذاری اولیه" :
+    stageKey === "local_to_server_uploading" ? "در حال بارگذاری به سرور میانی" :
+    stageKey === "server_to_google_queue" ? "در صف بارگذاری سرور میانی به گوگل" :
+    stageKey === "server_to_google_uploading" ? "در حال بارگذاری از سرور میانی به گوگل" :
+    stageKey === "google_finalizing" ? "گوگل در حال ثبت نهایی" :
+    stageKey === "done" ? "فرایند تکمیل شد" :
+    stageKey === "failed_non_retryable" ? "خطای غیر قابل رفع، مورد مجدد باید از طرف کاربر بارگذاری شود" :
+    ""
+  );
+}
+
+function resolveOutboxDisplayTitle_(x){
+  const fk = String(x?.payload?.formKey || "").trim();
+  let displayTitle =
+    String(x?.payload?.formNameFa || "").trim() ||
+    fk;
+
+  try {
+    if (!String(x?.payload?.formNameFa || "").trim()) {
+      const allForms = typeof flattenMenuForms === "function" ? flattenMenuForms(APP.menu) : [];
+      const found = allForms.find(f => String(f?.formKey || "").trim() === fk);
+      const formNameFa = String(found?.formNameFa || found?.titleFa || found?.title || "").trim();
+      if (formNameFa) displayTitle = formNameFa;
+    }
+  } catch (_) {}
+
+  try {
+    const answers = Array.isArray(x?.payload?.answers) ? x.payload.answers : [];
+    const descAns = answers.find(a => {
+      const t = String(a?.title || "").trim();
+      return t === "شرح هزینه" || t === "شرح تراکنش" || t === "شرح";
+    });
+
+    const descVal = String(descAns?.value || "")
+      .replace(/[\r\n\t]+/g, " ")
+      .replace(/\s+/g, " ")
+      .replace(/[<>]/g, "")
+      .trim();
+
+    if (descVal) displayTitle += " - " + descVal.slice(0, 60);
+  } catch (_) {}
+
+  return displayTitle || "فرم بدون نام";
+}
+
+function buildOutboxChipLinesFromItems_(items){
+  const arr = Array.isArray(items) ? items : [];
+  if (!arr.length) return [];
+
+  const counts = new Map();
+
+  for (const it of arr) {
+    const stageKey = String(it?.uiStageKey || "").trim();
+    if (!stageKey || stageKey === "done") continue;
+    counts.set(stageKey, Number(counts.get(stageKey) || 0) + 1);
+  }
+
+  const orderedStageKeys = [
+    "failed_non_retryable",
+    "local_initial_queue",
+    "local_to_server_uploading",
+    "server_to_google_queue",
+    "server_to_google_uploading",
+    "google_finalizing"
+  ];
+
+  const lines = [];
+  for (const k of orderedStageKeys) {
+    const n = Number(counts.get(k) || 0);
+    if (n <= 0) continue;
+    const st = outboxStageText_(k);
+    if (!st) continue;
+    lines.push(`${toFaDigits(String(n))} فرم ${st}`);
+  }
+
+  return lines;
 }
 
 function normalizeLocalOutboxItems_(items){
@@ -681,81 +774,52 @@ async function showOutboxDetails(){
   if (!panel || !body) return;
 
   const renderToken = ++__OUTBOX_PANEL_RENDER_TOKEN__;
+  const wasAlreadyOpen = !panel.classList.contains("hidden");
 
-  panel.classList.remove("hidden");
-  window.__OUTBOX_PANEL_OPEN__ = true;
-  scheduleOutboxLiveRefresh_();
-  body.innerHTML = `<div style="color:rgba(17,24,39,0.68);">در حال بارگذاری صف ارسال...</div>`;
+  if (!wasAlreadyOpen) {
+    panel.classList.remove("hidden");
+    window.__OUTBOX_PANEL_OPEN__ = true;
+    scheduleOutboxLiveRefresh_();
+    if (!String(body.innerHTML || "").trim()) {
+      body.innerHTML = "";
+    }
+  }
 
   const items = await outboxGetItems();
 
   if (renderToken !== __OUTBOX_PANEL_RENDER_TOKEN__) return;
+  if (panel.classList.contains("hidden")) return;
 
   if (!items.length){
     body.innerHTML = `<div style="color:rgba(17,24,39,0.68);">صف ارسال خالی است.</div>`;
     return;
   }
 
-  const orderedItems = items.slice().sort((a, b) => {
-    const sa = String(a?.status || "");
-    const sb = String(b?.status || "");
-    const rank = (s) =>
-      s === "processing" ? 0 :
-      s === "queued" ? 1 :
-      s === "failed" ? 2 :
-      s === "done" ? 3 : 9;
+  const stageRank = (x) => {
+    const k = String(x?.uiStageKey || "").trim();
+    return (
+      k === "failed_non_retryable" ? 0 :
+      k === "local_to_server_uploading" ? 1 :
+      k === "local_initial_queue" ? 2 :
+      k === "server_to_google_uploading" ? 3 :
+      k === "google_finalizing" ? 4 :
+      k === "server_to_google_queue" ? 5 :
+      k === "done" ? 6 : 9
+    );
+  };
 
-    return rank(sa) - rank(sb);
-  });
+  const orderedItems = items.slice().sort((a, b) => stageRank(a) - stageRank(b));
 
   const rows = orderedItems.slice(0, 20).map((x, i) => {
-    const stRaw = String(x?.status || "queued");
-
-    const uiStageKey = String(x?.uiStageKey || "").trim();
-
-    const st =
-      uiStageKey === "local_initial_queue" ? "در صف بارگذاری اولیه" :
-      uiStageKey === "local_to_server_uploading" ? "در حال بارگذاری به سرور میانی" :
-      uiStageKey === "server_to_google_queue" ? "در صف بارگذاری سرور میانی به گوگل" :
-      uiStageKey === "server_to_google_uploading" ? "در حال بارگذاری از سرور میانی به گوگل" :
-      uiStageKey === "google_finalizing" ? "گوگل در حال ثبت نهایی" :
-      uiStageKey === "done" ? "فرایند تکمیل شد" :
-      uiStageKey === "failed_non_retryable" ? "خطای غیر قابل رفع، مورد مجدد باید از طرف کاربر بارگذاری شود" :
-      stRaw;
-
-    const fk = String(x?.payload?.formKey || "");
-    let displayTitle = fk;
-
-    try {
-      const allForms = typeof flattenMenuForms === "function" ? flattenMenuForms(APP.menu) : [];
-      const found = allForms.find(f => String(f?.formKey || "").trim() === fk);
-      const formNameFa = String(found?.formNameFa || found?.titleFa || found?.title || "").trim();
-      if (formNameFa) displayTitle = formNameFa;
-    } catch (_) {}
-
-    try {
-      const answers = Array.isArray(x?.payload?.answers) ? x.payload.answers : [];
-      const descAns = answers.find(a => {
-        const t = String(a?.title || "").trim();
-        return t === "شرح هزینه" || t === "شرح تراکنش" || t === "شرح";
-      });
-
-      const descVal = String(descAns?.value || "")
-        .replace(/[\r\n\t]+/g, " ")
-        .replace(/\s+/g, " ")
-        .replace(/[<>]/g, "")
-        .trim();
-
-      if (descVal) displayTitle += " - " + descVal.slice(0, 60);
-    } catch (_) {}
-
+    const st = outboxStageText_(String(x?.uiStageKey || "").trim()) || String(x?.status || "queued");
+    const displayTitle = resolveOutboxDisplayTitle_(x);
     const err = String(x?.uiErrorText || x?.lastError || "").trim();
     const allowDelete = !!x?.uiDeleteAllowed;
 
     return `
       <div style="padding:10px 0;border-bottom:1px solid rgba(17,24,39,0.08);">
         <div style="font-weight:700;color:rgba(17,24,39,0.92);">
-          ${toFaDigits(i + 1)} - ${escapeHtml(displayTitle || "فرم بدون نام")}
+          ${toFaDigits(i + 1)} - ${escapeHtml(displayTitle)}
         </div>
 
         <div style="font-size:13px;color:rgba(17,24,39,0.68);margin-top:4px;">
@@ -815,11 +879,7 @@ async function showOutboxDetails(){
       }
     };
   });
-
-  panel.classList.remove("hidden");
-  window.__OUTBOX_PANEL_OPEN__ = true;
 }
-
 async function updateOutboxChip(){
   const chip = document.getElementById("outboxChip");
   const txt  = document.getElementById("outboxText");
@@ -838,26 +898,16 @@ async function updateOutboxChip(){
     }
   } catch (_) {}
 
-  if ((localQuick.total || 0) > 0) {
-    chip.style.display = "inline-flex";
-    chip.classList.remove("pending", "error");
-
-    const quickActive = Number(localQuick.queued || 0) + Number(localQuick.processing || 0);
-    const quickFailed = Number(localQuick.failed || 0);
-
-    if (quickFailed > 0) {
-      txt.textContent = `${toFaDigits(String(quickFailed))} ارسال ناموفق`;
-      chip.classList.add("error");
-    } else if (quickActive > 0) {
-      txt.textContent =
-        `${toFaDigits(String(quickActive))} فرم در حال پردازش میباشد`;
-      chip.classList.add("pending");
-    }
+  let items = [];
+  try {
+    items = await outboxGetItems();
+  } catch (_) {
+    items = [];
   }
 
-  const s = await outboxGetSummary();
+  const hasAnything = Array.isArray(items) && items.length > 0;
 
-  if ((s.total || 0) <= 0) {
+  if (!hasAnything && (localQuick.total || 0) <= 0) {
     chip.style.display = "none";
     chip.classList.remove("pending", "error");
 
@@ -872,37 +922,23 @@ async function updateOutboxChip(){
   chip.classList.remove("pending", "error");
 
   const online = navigator.onLine && !window.__UFRP_FORCE_OFFLINE__;
-  const activeCount = Number(s.queued || 0) + Number(s.processing || 0);
 
   if (!online) {
-    const waiting = activeCount + Number(s.failed || 0);
+    const waiting = Math.max(
+      Number(localQuick.total || 0),
+      Number(Array.isArray(items) ? items.length : 0)
+    );
     txt.textContent =
-      `ارتباط اینترنت قطع میباشد. ${toFaDigits(String(waiting))} فرم در انتظار ارسال پس از برقراری ارتباط میباشد`;
+      `ارتباط اینترنت قطع میباشد. ${toFaDigits(String(waiting || 1))} فرم در انتظار ارسال پس از برقراری ارتباط میباشد`;
     chip.classList.add("pending");
     return;
   }
 
-  const reconnectedAt = Number(window.__UFRP_RECONNECTED_AT__ || 0);
-  const justReconnected = reconnectedAt && (Date.now() - reconnectedAt < 4000);
+  const stageLines = buildOutboxChipLinesFromItems_(items);
 
-  if (justReconnected && (s.total || 0) > 0) {
-    const count = activeCount || Number(s.failed || 0) || Number(s.total || 0);
-    txt.textContent =
-      `${toFaDigits(String(count))} از ${toFaDigits(String(s.total || count))} فرم در حال ارسال نهایی میباشد`;
-    chip.classList.add("pending");
-    return;
-  }
-
-  if ((s.failed || 0) > 0) {
-    txt.textContent = `${toFaDigits(String(s.failed))} ارسال ناموفق`;
-    chip.classList.add("error");
-    return;
-  }
-
-  if (activeCount > 0) {
-    txt.textContent =
-      `${toFaDigits(String(activeCount))} از ${toFaDigits(String(s.total || activeCount))} فرم در حال ارسال نهایی میباشد`;
-    chip.classList.add("pending");
+  if (stageLines.length) {
+    txt.innerHTML = stageLines.map(escapeHtml).join("<br>");
+    chip.classList.add(stageLines.some(x => x.includes("خطای غیر قابل رفع")) ? "error" : "pending");
 
     if (window.__OUTBOX_PANEL_OPEN__) {
       showOutboxDetails().catch(() => {});
@@ -913,7 +949,6 @@ async function updateOutboxChip(){
   chip.style.display = "none";
   stopOutboxLiveRefresh_();
 }
-
 document.addEventListener("click", (e) => {
   const chipEl = e.target.closest("#outboxChip");
   if (!chipEl) return;
@@ -3053,6 +3088,7 @@ window.submitForm = async function submitForm(){
     try {
       addRecentOutboxBridge_({
         formKey: APP.currentFormKey,
+        formNameFa: String(APP.currentBundle?.form?.formNameFa || APP.currentBundle?.form?.titleFa || "").trim(),
         submissionUid: submissionUid,
         answers: answers
       });
