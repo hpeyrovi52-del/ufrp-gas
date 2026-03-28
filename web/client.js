@@ -604,7 +604,8 @@ async function showOutboxDetails(){
       if (descVal) displayTitle += " - " + descVal.slice(0, 60);
     } catch (_) {}
 
-    const err = String(x?.lastError || "").trim();
+    const err = String(x?.uiErrorText || x?.lastError || "").trim();
+    const allowDelete = !!x?.uiDeleteAllowed;
 
     return `
       <div style="padding:10px 0;border-bottom:1px solid rgba(17,24,39,0.08);">
@@ -618,7 +619,7 @@ async function showOutboxDetails(){
 
         ${err ? `<div style="font-size:12px;color:#991b1b;margin-top:6px;">${escapeHtml(err)}</div>` : ``}
 
-        ${err ? `
+        ${allowDelete ? `
           <div style="display:flex;gap:8px;justify-content:flex-start;margin-top:10px;">
             <button
               type="button"
