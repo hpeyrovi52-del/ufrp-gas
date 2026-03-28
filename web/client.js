@@ -597,6 +597,7 @@ async function showOutboxDetails(){
 
   panel.classList.remove("hidden");
   window.__OUTBOX_PANEL_OPEN__ = true;
+  scheduleOutboxLiveRefresh_();
   body.innerHTML = `<div style="color:rgba(17,24,39,0.68);">در حال بارگذاری صف ارسال...</div>`;
 
   const items = await outboxGetItems();
@@ -776,6 +777,7 @@ async function updateOutboxChip(){
     const panel = document.getElementById("outboxPanel");
     if (panel) panel.classList.add("hidden");
     window.__OUTBOX_PANEL_OPEN__ = false;
+    stopOutboxLiveRefresh_();
     return;
   }
 
@@ -822,6 +824,7 @@ async function updateOutboxChip(){
   }
 
   chip.style.display = "none";
+  stopOutboxLiveRefresh_();
 }
 
 document.addEventListener("click", (e) => {
@@ -832,6 +835,44 @@ document.addEventListener("click", (e) => {
 });
 
 let __outboxDebugTimer = null;
+let __OUTBOX_LIVE_REFRESH_TIMER__ = null;
+
+function scheduleOutboxLiveRefresh_(){
+  try {
+    if (__OUTBOX_LIVE_REFRESH_TIMER__) return;
+
+    __OUTBOX_LIVE_REFRESH_TIMER__ = setInterval(async () => {
+      try {
+        const s = await outboxGetSummary();
+        const active =
+          Number(s?.queued || 0) +
+          Number(s?.processing || 0) +
+          Number(s?.failed || 0);
+
+        if (active <= 0) {
+          clearInterval(__OUTBOX_LIVE_REFRESH_TIMER__);
+          __OUTBOX_LIVE_REFRESH_TIMER__ = null;
+          return;
+        }
+
+        await updateOutboxChip();
+
+        if (window.__OUTBOX_PANEL_OPEN__) {
+          await showOutboxDetails();
+        }
+      } catch (_) {}
+    }, 2000);
+  } catch (_) {}
+}
+
+function stopOutboxLiveRefresh_(){
+  try {
+    if (__OUTBOX_LIVE_REFRESH_TIMER__) {
+      clearInterval(__OUTBOX_LIVE_REFRESH_TIMER__);
+      __OUTBOX_LIVE_REFRESH_TIMER__ = null;
+    }
+  } catch (_) {}
+}
 
 document.addEventListener("touchstart", (e) => {
   const chip = document.getElementById("outboxChip");
@@ -868,6 +909,7 @@ document.addEventListener("click", (e) => {
   if (e.target === closeBtn) {
     panel.classList.add("hidden");
     window.__OUTBOX_PANEL_OPEN__ = false;
+    stopOutboxLiveRefresh_();
     return;
   }
 
@@ -878,6 +920,7 @@ document.addEventListener("click", (e) => {
     if (!clickedInsidePanel && !clickedChip) {
       panel.classList.add("hidden");
       window.__OUTBOX_PANEL_OPEN__ = false;
+      stopOutboxLiveRefresh_();
     }
   }
 });
