@@ -574,6 +574,8 @@ function outboxSetStatus(id, status, lastError){
   try { updateOutboxChip(); } catch(_) {}
 }
 
+let __OUTBOX_PANEL_RENDER_TOKEN__ = 0;
+
 async function outboxRemove(id){
   try {
     if (window.__OFFLINE__ && typeof window.__OFFLINE__.removeQueueItem === "function") {
@@ -591,12 +593,18 @@ async function showOutboxDetails(){
   const body  = document.getElementById("outboxPanelBody");
   if (!panel || !body) return;
 
+  const renderToken = ++__OUTBOX_PANEL_RENDER_TOKEN__;
+
+  panel.classList.remove("hidden");
+  window.__OUTBOX_PANEL_OPEN__ = true;
+  body.innerHTML = `<div style="color:rgba(17,24,39,0.68);">در حال بارگذاری صف ارسال...</div>`;
+
   const items = await outboxGetItems();
+
+  if (renderToken !== __OUTBOX_PANEL_RENDER_TOKEN__) return;
 
   if (!items.length){
     body.innerHTML = `<div style="color:rgba(17,24,39,0.68);">صف ارسال خالی است.</div>`;
-    panel.classList.remove("hidden");
-    window.__OUTBOX_PANEL_OPEN__ = true;
     return;
   }
 
