@@ -566,15 +566,16 @@ async function showOutboxDetails(){
   const rows = orderedItems.slice(0, 20).map((x, i) => {
     const stRaw = String(x?.status || "queued");
 
-    const sourceLayer = String(x?.sourceLayer || "").trim();
+    const uiStageKey = String(x?.uiStageKey || "").trim();
 
     const st =
-      stRaw === "queued" && sourceLayer === "server" ? "در صف سرور" :
-      stRaw === "processing" && sourceLayer === "server" ? "در حال ارسال به گوگل" :
-      stRaw === "queued" ? "در صف دستگاه" :
-      stRaw === "processing" ? "در حال ارسال از دستگاه" :
-      stRaw === "failed" ? "ناموفق" :
-      stRaw === "done" ? "انجام شده" :
+      uiStageKey === "local_initial_queue" ? "در صف بارگذاری اولیه" :
+      uiStageKey === "local_to_server_uploading" ? "در حال بارگذاری به سرور میانی" :
+      uiStageKey === "server_to_google_queue" ? "در صف بارگذاری سرور میانی به گوگل" :
+      uiStageKey === "server_to_google_uploading" ? "در حال بارگذاری از سرور میانی به گوگل" :
+      uiStageKey === "google_finalizing" ? "گوگل در حال ثبت نهایی" :
+      uiStageKey === "done" ? "فرایند تکمیل شد" :
+      uiStageKey === "failed_non_retryable" ? "خطای غیر قابل رفع، مورد مجدد باید از طرف کاربر بارگذاری شود" :
       stRaw;
 
     const fk = String(x?.payload?.formKey || "");
