@@ -505,6 +505,22 @@ function outboxStageRank_(stageKey){
   );
 }
 
+function preferRicherOutboxAnswers_(a, b){
+  const aa = Array.isArray(a) ? a : [];
+  const bb = Array.isArray(b) ? b : [];
+
+  const score = (arr) => {
+    const nonMeta = arr.filter(x => String(x?.title || "").trim() !== "__SubmissionUID").length;
+    const hasDesc = arr.some(x => {
+      const t = String(x?.title || "").trim();
+      return t === "شرح" || t === "شرح هزینه" || t === "شرح تراکنش";
+    }) ? 100 : 0;
+    return hasDesc + nonMeta;
+  };
+
+  return score(bb) > score(aa) ? bb : aa;
+}
+
 function stabilizeOutboxItems_(items){
   const arr = Array.isArray(items) ? items : [];
   const prev = Array.isArray(__OUTBOX_LAST_RENDERED_ITEMS__) ? __OUTBOX_LAST_RENDERED_ITEMS__ : [];
@@ -548,7 +564,7 @@ function stabilizeOutboxItems_(items){
       payload: {
         ...(it?.payload || {}),
         formNameFa: String(old?.payload?.formNameFa || it?.payload?.formNameFa || "").trim(),
-        answers: newAnswers.length ? newAnswers : oldAnswers
+        answers: preferRicherOutboxAnswers_(oldAnswers, newAnswers)
       }
     };
   });
@@ -775,7 +791,7 @@ async function outboxGetItems(){
       payload: {
         ...(prev?.payload || {}),
         ...(it?.payload || {}),
-        answers: nextAnswers.length ? nextAnswers : prevAnswers
+        answers: preferRicherOutboxAnswers_(prevAnswers, nextAnswers)
       }
     });
   }
@@ -1043,7 +1059,9 @@ async function updateOutboxChip(){
           payload: { answers: [] }
         }));
 
-    __OUTBOX_CURRENT_ITEMS__ = immediateItems.slice();
+    if (recentNow.length) {
+      __OUTBOX_CURRENT_ITEMS__ = recentNow.slice();
+    }
 
     const immediateText = buildGeneralOutboxChipText_(immediateItems);
     if (immediateText) {
