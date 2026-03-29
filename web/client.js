@@ -3227,12 +3227,39 @@ window.submitForm = async function submitForm(){
     });
 
     try {
+      const seededFormNameFa = String(
+        APP.currentBundle?.form?.formNameFa ||
+        APP.currentBundle?.form?.titleFa ||
+        ""
+      ).trim();
+
       addRecentOutboxBridge_({
         formKey: APP.currentFormKey,
-        formNameFa: String(APP.currentBundle?.form?.formNameFa || APP.currentBundle?.form?.titleFa || "").trim(),
+        formNameFa: seededFormNameFa,
         submissionUid: submissionUid,
         answers: answers
       });
+
+      __OUTBOX_CURRENT_ITEMS__ = [{
+        id: "seed-" + submissionUid,
+        submissionUid: submissionUid,
+        status: "processing",
+        sourceLayer: "recent",
+        uiStageKey: "local_to_server_uploading",
+        uiPercent: outboxStagePercent_("local_to_server_uploading"),
+        uiDeleteAllowed: false,
+        uiErrorText: "",
+        rawOutboxError: "",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        retryCount: 0,
+        payload: {
+          formKey: APP.currentFormKey,
+          formNameFa: seededFormNameFa,
+          submissionUid: submissionUid,
+          answers: Array.isArray(answers) ? answers : []
+        }
+      }];
     } catch (_) {}
 
     console.log("Queued submission ID:", queuedId);
