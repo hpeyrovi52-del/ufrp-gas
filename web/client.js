@@ -521,6 +521,46 @@ function preferRicherOutboxAnswers_(a, b){
   return score(bb) > score(aa) ? bb : aa;
 }
 
+function outboxItemKey_(it){
+  return String(
+    ((it?.payload?.answers || []).find(a => String(a?.title || "").trim() === "__SubmissionUID") || {}).value ||
+    it?.payload?.submissionUid ||
+    it?.submissionUid ||
+    it?.id ||
+    ""
+  ).trim() || String(it?.id || "").trim();
+}
+
+function mergeWithCurrentOutboxSnapshot_(items){
+  const next = Array.isArray(items) ? items : [];
+  const current = Array.isArray(__OUTBOX_CURRENT_ITEMS__) ? __OUTBOX_CURRENT_ITEMS__ : [];
+  if (!current.length || !next.length) return next;
+
+  const curMap = new Map();
+  for (const it of current) {
+    const k = outboxItemKey_(it);
+    if (k) curMap.set(k, it);
+  }
+
+  return next.map((it) => {
+    const k = outboxItemKey_(it);
+    const cur = k ? curMap.get(k) : null;
+    if (!cur) return it;
+
+    const curAnswers = Array.isArray(cur?.payload?.answers) ? cur.payload.answers : [];
+    const nextAnswers = Array.isArray(it?.payload?.answers) ? it.payload.answers : [];
+
+    return {
+      ...it,
+      payload: {
+        ...(it?.payload || {}),
+        formNameFa: String(it?.payload?.formNameFa || cur?.payload?.formNameFa || "").trim(),
+        answers: preferRicherOutboxAnswers_(curAnswers, nextAnswers)
+      }
+    };
+  });
+}
+
 function stabilizeOutboxItems_(items){
   const arr = Array.isArray(items) ? items : [];
   const prev = Array.isArray(__OUTBOX_LAST_RENDERED_ITEMS__) ? __OUTBOX_LAST_RENDERED_ITEMS__ : [];
@@ -699,8 +739,17 @@ function normalizeServerOutboxItems_(items){
           }
         ];
 
+    let formNameFa = "";
+    try {
+      const fk = String(x?.formKey || "").trim();
+      const allForms = typeof flattenMenuForms === "function" ? flattenMenuForms(APP.menu) : [];
+      const found = allForms.find(f => String(f?.formKey || "").trim() === fk);
+      formNameFa = String(found?.formNameFa || found?.titleFa || found?.title || "").trim();
+    } catch (_) {}
+
     return {
       id: String(x?.id || ""),
+      submissionUid: String(x?.submissionUid || x?.id || "").trim(),
       status: compatStatus,
       lastError:
         stageKey === "failed_non_retryable"
@@ -722,6 +771,8 @@ function normalizeServerOutboxItems_(items){
       serverRawStatus: rawStatus,
       payload: {
         formKey: String(x?.formKey || "").trim(),
+        formNameFa: formNameFa,
+        submissionUid: String(x?.submissionUid || x?.id || "").trim(),
         answers: answers
       }
     };
@@ -808,7 +859,7 @@ async function outboxGetItems(){
     removeRecentOutboxBridgeByUid_(key);
   }
 
-  return stabilizeOutboxItems_(Array.from(merged.values()));
+  return stabilizeOutboxItems_(mergeWithCurrentOutboxSnapshot_(Array.from(merged.values())));
 }
 async function outboxGetSummary(){
   let local = { total: 0, queued: 0, processing: 0, failed: 0 };
@@ -1079,14 +1130,16 @@ async function updateOutboxChip(){
 
   const currentSnapshot = Array.isArray(__OUTBOX_CURRENT_ITEMS__) ? __OUTBOX_CURRENT_ITEMS__.slice() : [];
   const hasAnything = Array.isArray(items) && items.length > 0;
+  const hasLiveEvidence = hasAnything || (localQuick.total || 0) > 0 || recentNow.length > 0;
 
   if (hasAnything) {
-    __OUTBOX_CURRENT_ITEMS__ = items.slice();
-  } else if (currentSnapshot.length > 0) {
+    __OUTBOX_CURRENT_ITEMS__ = mergeWithCurrentOutboxSnapshot_(items).slice();
+    items = __OUTBOX_CURRENT_ITEMS__.slice();
+  } else if (hasLiveEvidence && currentSnapshot.length > 0) {
     items = currentSnapshot.slice();
   }
 
-  if (!hasAnything && currentSnapshot.length <= 0 && (localQuick.total || 0) <= 0 && recentNow.length <= 0) {
+  if (!hasLiveEvidence && currentSnapshot.length <= 0) {
     __OUTBOX_CURRENT_ITEMS__ = [];
     chip.style.display = "none";
     chip.classList.remove("pending", "error");
