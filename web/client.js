@@ -1028,30 +1028,18 @@ async function syncActiveOutboxRegistry_(){
 
     if (!merged) continue;
 
-    const hadActive = activeMap.has(key);
-    const hasLocalNow = localMap.has(key);
-    const hasServerNow = serverMap.has(key);
-
-    // definitive disappearance:
-    // if it used to exist locally for UI, but now there is no local queue item
-    // and no server queue item for this submission, and the server read succeeded,
-    // then treat it as completed and remove it from the active registry.
-    if (hadActive && !hasLocalNow && !hasServerNow && !serverFetchFailed) {
-      removeActiveOutboxItem_(key);
-      continue;
-    }
-
-    if (hasLocalNow) {
+    if (localMap.has(key)) {
       merged = mergeOutboxItemOverlay_(merged, localMap.get(key));
     }
 
-    if (hasServerNow) {
+    if (serverMap.has(key)) {
       merged = mergeOutboxItemOverlay_(merged, serverMap.get(key));
     }
 
     const bucket = String(merged?.serverBucket || "").trim();
     const stageKey = String(merged?.uiStageKey || "").trim();
 
+    // Only explicit terminal server-side completion may remove the item
     if (bucket === "sent" || stageKey === "done") {
       removeActiveOutboxItem_(key);
       continue;
@@ -1079,6 +1067,7 @@ async function syncActiveOutboxRegistry_(){
     visible.push(item);
   }
 
+  // Keep registry in sync with still-active items only
   const keep = visible
     .map(registryEntryFromOutboxItem_)
     .filter(Boolean);
