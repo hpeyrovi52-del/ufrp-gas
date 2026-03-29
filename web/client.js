@@ -835,7 +835,12 @@ async function showOutboxDetails(){
 
   let items = [];
   try {
-    items = await outboxGetItems();
+    const recentNow = normalizeRecentOutboxBridgeItems_();
+    if (recentNow.length) {
+      items = recentNow.slice();
+    } else {
+      items = await outboxGetItems();
+    }
   } catch (_) {
     items = [];
   }
@@ -956,6 +961,25 @@ async function updateOutboxChip(){
     }
   } catch (_) {}
 
+  const recentNow = normalizeRecentOutboxBridgeItems_();
+
+  if ((recentNow.length > 0) || (localQuick.total || 0) > 0) {
+    chip.style.display = "inline-flex";
+    chip.classList.remove("pending", "error");
+
+    const immediateItems = recentNow.length
+      ? recentNow
+      : new Array(Math.max(1, Number(localQuick.total || 0))).fill(null).map(() => ({
+          uiStageKey: "local_to_server_uploading"
+        }));
+
+    const immediateText = buildGeneralOutboxChipText_(immediateItems);
+    if (immediateText) {
+      txt.innerHTML = immediateText;
+      chip.classList.add("pending");
+    }
+  }
+
   let items = [];
   try {
     items = await outboxGetItems();
@@ -965,7 +989,7 @@ async function updateOutboxChip(){
 
   const hasAnything = Array.isArray(items) && items.length > 0;
 
-  if (!hasAnything && (localQuick.total || 0) <= 0) {
+  if (!hasAnything && (localQuick.total || 0) <= 0 && recentNow.length <= 0) {
     chip.style.display = "none";
     chip.classList.remove("pending", "error");
 
@@ -984,6 +1008,7 @@ async function updateOutboxChip(){
   if (!online) {
     const waiting = Math.max(
       Number(localQuick.total || 0),
+      Number(recentNow.length || 0),
       Number(Array.isArray(items) ? items.length : 0)
     );
     txt.textContent =
