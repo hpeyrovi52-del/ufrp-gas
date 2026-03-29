@@ -852,9 +852,9 @@ function normalizeServerOutboxItems_(items){
 }
 
 async function outboxGetItems(){
+  const activeItems = normalizeActiveOutboxRegistryItems_();
   let localItems = [];
   let serverItems = [];
-  const activeItems = normalizeActiveOutboxRegistryItems_();
 
   try {
     if (window.__OFFLINE__ && typeof window.__OFFLINE__.getQueue === "function") {
@@ -874,12 +874,14 @@ async function outboxGetItems(){
 
   const merged = new Map();
 
+  // 1) source of truth: active local registry
   for (const it of activeItems) {
     const key = outboxItemKey_(it);
     if (!key) continue;
     merged.set(key, it);
   }
 
+  // 2) local queue can only advance/refresh status, never replace title/answers
   for (const it of localItems) {
     const key = outboxItemKey_(it);
     if (!key) continue;
@@ -905,12 +907,14 @@ async function outboxGetItems(){
     });
   }
 
+  // 3) server queue may only update stage/status of an existing item
   for (const it of serverItems) {
     const key = outboxItemKey_(it);
     if (!key) continue;
 
     const prev = merged.get(key);
     if (!prev) {
+      // if somehow server sees an item before local registry does, accept it
       merged.set(key, it);
       continue;
     }
@@ -930,20 +934,27 @@ async function outboxGetItems(){
     });
   }
 
-  const mergedItems = stabilizeOutboxItems_(mergeWithCurrentOutboxSnapshot_(Array.from(merged.values())));
+  let mergedItems = Array.from(merged.values());
+  mergedItems = stabilizeOutboxItems_(mergeWithCurrentOutboxSnapshot_(mergedItems));
 
+  // 4) definitive completion cleanup only
   const keep = [];
+  const visible = [];
+
   for (const it of mergedItems) {
     const key = outboxItemKey_(it);
     if (!key) continue;
 
     const stageKey = String(it?.uiStageKey || "").trim();
     const bucket = String(it?.serverBucket || "").trim();
+    const doneNow = (stageKey === "done" || bucket === "sent");
 
-    if (stageKey === "done" || bucket === "sent") {
+    if (doneNow) {
+      removeActiveOutboxItem_(key);
       continue;
     }
 
+    visible.push(it);
     keep.push({
       submissionUid: key,
       formKey: String(it?.payload?.formKey || "").trim(),
@@ -958,13 +969,11 @@ async function outboxGetItems(){
       updatedAtMs: Date.now()
     });
   }
-  setActiveOutboxRegistry_(keep);
 
-  return mergedItems.filter(it => {
-    const stageKey = String(it?.uiStageKey || "").trim();
-    const bucket = String(it?.serverBucket || "").trim();
-    return !(stageKey === "done" || bucket === "sent");
-  });
+  setActiveOutboxRegistry_(keep);
+  __OUTBOX_CURRENT_ITEMS__ = visible.slice();
+
+  return visible;
 }
 async function outboxGetSummary(){
   const items = await outboxGetItems().catch(() => []);
