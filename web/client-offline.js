@@ -279,7 +279,7 @@
           }
 
           const retryable =
-            /timeout|timed out|failed to fetch|network|502|503|offline/i.test(errMsg);
+            /timeout|timed out|failed to fetch|network|502|503|offline|upload_to_server_failed|local_api_unreachable|آفلاین|ارسال بعداً انجام می‌شود|پس از برقراری ارتباط|قطع میباشد|ارتباط با سرور|سرور میانی/i.test(errMsg);
 
           item.updatedAt = new Date().toISOString();
           item.lastError = errMsg;

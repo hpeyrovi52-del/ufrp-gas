@@ -363,7 +363,7 @@ function isRetryableServerOutboxError_(errMsg){
 }
 
 function isRetryableLocalOutboxError_(errMsg){
-  return /failed to fetch|network|offline|timeout|timed out|502|503|504|upload_to_server_failed|local_api_unreachable|connection|disconnect|aborted|internet|سرور میانی|ارتباط با سرور|قطع میباشد/i.test(
+  return /failed to fetch|network|offline|timeout|timed out|502|503|504|upload_to_server_failed|local_api_unreachable|connection|disconnect|aborted|internet|آفلاین|ارسال بعداً انجام می‌شود|پس از برقراری ارتباط|سرور میانی|ارتباط با سرور|قطع میباشد/i.test(
     String(errMsg || "").trim()
   );
 }
@@ -1242,9 +1242,7 @@ function renderOutboxPanelBody_(items){
         btn.style.opacity = "0.6";
         btn.textContent = "در حال حذف...";
 
-        if (window.__OFFLINE__ && typeof window.__OFFLINE__.removeQueueItem === "function") {
-          await window.__OFFLINE__.removeQueueItem(id);
-        }
+        await outboxRemove(id);
 
         await showOutboxDetails();
 
