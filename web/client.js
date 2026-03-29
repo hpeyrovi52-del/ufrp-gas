@@ -947,35 +947,32 @@ async function showOutboxDetails(){
   }
 
   let items = Array.isArray(__OUTBOX_CURRENT_ITEMS__) ? __OUTBOX_CURRENT_ITEMS__.slice() : [];
+  let liveEvidence = items.length > 0;
 
   try {
     const recentNow = normalizeRecentOutboxBridgeItems_();
     if (recentNow.length) {
       const keyed = new Map();
 
-      const getKey = (it) =>
-        String(
-          ((it?.payload?.answers || []).find(a => String(a?.title || "").trim() === "__SubmissionUID") || {}).value ||
-          it?.payload?.submissionUid ||
-          it?.submissionUid ||
-          it?.id ||
-          ""
-        ).trim() || String(it?.id || "").trim();
-
       for (const it of items) {
-        const k = getKey(it);
+        const k = outboxItemKey_(it);
         if (k) keyed.set(k, it);
       }
       for (const it of recentNow) {
-        const k = getKey(it);
+        const k = outboxItemKey_(it);
         if (k && !keyed.has(k)) keyed.set(k, it);
       }
 
       items = Array.from(keyed.values());
+      liveEvidence = true;
     }
 
     if (!items.length) {
-      items = await outboxGetItems();
+      const fetched = await outboxGetItems();
+      if (Array.isArray(fetched) && fetched.length) {
+        items = fetched;
+        liveEvidence = true;
+      }
     }
   } catch (_) {
     items = items || [];
@@ -985,6 +982,12 @@ async function showOutboxDetails(){
   if (panel.classList.contains("hidden")) return;
 
   if (!items.length) {
+    if (!liveEvidence) {
+      __OUTBOX_LAST_RENDERED_ITEMS__ = [];
+      body.innerHTML = `<div style="color:rgba(17,24,39,0.68);">صف ارسال خالی است.</div>`;
+      return;
+    }
+
     const fallbackItems = Array.isArray(__OUTBOX_LAST_RENDERED_ITEMS__) ? __OUTBOX_LAST_RENDERED_ITEMS__ : [];
     if (!fallbackItems.length) {
       body.innerHTML = `<div style="color:rgba(17,24,39,0.68);">صف ارسال خالی است.</div>`;
@@ -1098,27 +1101,24 @@ async function updateOutboxChip(){
   } catch (_) {}
 
   const recentNow = normalizeRecentOutboxBridgeItems_();
+  const currentSnapshot = Array.isArray(__OUTBOX_CURRENT_ITEMS__) ? __OUTBOX_CURRENT_ITEMS__.slice() : [];
 
-  if ((recentNow.length > 0) || (localQuick.total || 0) > 0) {
+  let baseItems = currentSnapshot.slice();
+  if (!baseItems.length && recentNow.length) {
+    baseItems = recentNow.slice();
+    __OUTBOX_CURRENT_ITEMS__ = recentNow.slice();
+  } else if (!baseItems.length && (localQuick.total || 0) > 0) {
+    baseItems = new Array(Math.max(1, Number(localQuick.total || 0))).fill(null).map(() => ({
+      uiStageKey: "local_to_server_uploading",
+      payload: { answers: [] }
+    }));
+  }
+
+  if (baseItems.length) {
     chip.style.display = "inline-flex";
     chip.classList.remove("pending", "error");
-
-    const immediateItems = recentNow.length
-      ? recentNow
-      : new Array(Math.max(1, Number(localQuick.total || 0))).fill(null).map(() => ({
-          uiStageKey: "local_to_server_uploading",
-          payload: { answers: [] }
-        }));
-
-    if (recentNow.length) {
-      __OUTBOX_CURRENT_ITEMS__ = recentNow.slice();
-    }
-
-    const immediateText = buildGeneralOutboxChipText_(immediateItems);
-    if (immediateText) {
-      txt.innerHTML = immediateText;
-      chip.classList.add("pending");
-    }
+    txt.innerHTML = buildGeneralOutboxChipText_(baseItems) || `${toFaDigits(String(baseItems.length))} فرم در حال پردازش میباشد`;
+    chip.classList.add("pending");
   }
 
   let items = [];
@@ -1128,19 +1128,19 @@ async function updateOutboxChip(){
     items = [];
   }
 
-  const currentSnapshot = Array.isArray(__OUTBOX_CURRENT_ITEMS__) ? __OUTBOX_CURRENT_ITEMS__.slice() : [];
   const hasAnything = Array.isArray(items) && items.length > 0;
   const hasLiveEvidence = hasAnything || (localQuick.total || 0) > 0 || recentNow.length > 0;
 
   if (hasAnything) {
     __OUTBOX_CURRENT_ITEMS__ = mergeWithCurrentOutboxSnapshot_(items).slice();
     items = __OUTBOX_CURRENT_ITEMS__.slice();
-  } else if (hasLiveEvidence && currentSnapshot.length > 0) {
-    items = currentSnapshot.slice();
+  } else if (hasLiveEvidence && __OUTBOX_CURRENT_ITEMS__.length > 0) {
+    items = __OUTBOX_CURRENT_ITEMS__.slice();
   }
 
-  if (!hasLiveEvidence && currentSnapshot.length <= 0) {
+  if (!hasLiveEvidence) {
     __OUTBOX_CURRENT_ITEMS__ = [];
+    __OUTBOX_LAST_RENDERED_ITEMS__ = [];
     chip.style.display = "none";
     chip.classList.remove("pending", "error");
 
@@ -1160,7 +1160,8 @@ async function updateOutboxChip(){
     const waiting = Math.max(
       Number(localQuick.total || 0),
       Number(recentNow.length || 0),
-      Number(Array.isArray(items) ? items.length : 0)
+      Number(Array.isArray(items) ? items.length : 0),
+      Number(__OUTBOX_CURRENT_ITEMS__.length || 0)
     );
     txt.textContent =
       `ارتباط اینترنت قطع میباشد. ${toFaDigits(String(waiting || 1))} فرم در انتظار ارسال پس از برقراری ارتباط میباشد`;
@@ -1168,21 +1169,12 @@ async function updateOutboxChip(){
     return;
   }
 
-  const generalChipText = buildGeneralOutboxChipText_(items);
+  txt.innerHTML = buildGeneralOutboxChipText_(items) || `${toFaDigits(String(items.length || 1))} فرم در حال پردازش میباشد`;
+  chip.classList.add(txt.innerHTML.includes("ارسال ناموفق") ? "error" : "pending");
 
-  if (generalChipText) {
-    txt.innerHTML = generalChipText;
-    chip.classList.add(generalChipText.includes("ارسال ناموفق") ? "error" : "pending");
-
-    if (window.__OUTBOX_PANEL_OPEN__) {
-      showOutboxDetails().catch(() => {});
-    }
-    return;
+  if (window.__OUTBOX_PANEL_OPEN__) {
+    showOutboxDetails().catch(() => {});
   }
-
-  __OUTBOX_CURRENT_ITEMS__ = [];
-  chip.style.display = "none";
-  stopOutboxLiveRefresh_();
 }
 document.addEventListener("click", (e) => {
   const chipEl = e.target.closest("#outboxChip");
