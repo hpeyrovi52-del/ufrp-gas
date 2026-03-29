@@ -699,15 +699,20 @@ async function outboxGetItems(){
       ""
     ).trim() || String(it?.id || "").trim();
 
+  const realKeys = new Set();
+
   for (const it of localItems) {
     const key = getKey(it);
     if (!key) continue;
     merged.set(key, it);
+    realKeys.add(key);
   }
 
   for (const it of serverItems) {
     const key = getKey(it);
     if (!key) continue;
+
+    realKeys.add(key);
 
     const prev = merged.get(key);
 
@@ -738,10 +743,8 @@ async function outboxGetItems(){
     }
   }
 
-  for (const key of Array.from(merged.keys())) {
-    if (key && !String(key).startsWith("recent-")) {
-      removeRecentOutboxBridgeByUid_(key);
-    }
+  for (const key of Array.from(realKeys)) {
+    removeRecentOutboxBridgeByUid_(key);
   }
 
   return Array.from(merged.values());
