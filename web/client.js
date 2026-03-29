@@ -881,17 +881,37 @@ async function showOutboxDetails(){
 
   let items = Array.isArray(__OUTBOX_CURRENT_ITEMS__) ? __OUTBOX_CURRENT_ITEMS__.slice() : [];
 
-  if (!items.length) {
-    try {
-      const recentNow = normalizeRecentOutboxBridgeItems_();
-      if (recentNow.length) {
-        items = recentNow.slice();
-      } else {
-        items = await outboxGetItems();
+  try {
+    const recentNow = normalizeRecentOutboxBridgeItems_();
+    if (recentNow.length) {
+      const keyed = new Map();
+
+      const getKey = (it) =>
+        String(
+          ((it?.payload?.answers || []).find(a => String(a?.title || "").trim() === "__SubmissionUID") || {}).value ||
+          it?.payload?.submissionUid ||
+          it?.submissionUid ||
+          it?.id ||
+          ""
+        ).trim() || String(it?.id || "").trim();
+
+      for (const it of items) {
+        const k = getKey(it);
+        if (k) keyed.set(k, it);
       }
-    } catch (_) {
-      items = [];
+      for (const it of recentNow) {
+        const k = getKey(it);
+        if (k && !keyed.has(k)) keyed.set(k, it);
+      }
+
+      items = Array.from(keyed.values());
     }
+
+    if (!items.length) {
+      items = await outboxGetItems();
+    }
+  } catch (_) {
+    items = items || [];
   }
 
   if (renderToken !== __OUTBOX_PANEL_RENDER_TOKEN__) return;
@@ -1039,13 +1059,16 @@ async function updateOutboxChip(){
     items = [];
   }
 
+  const currentSnapshot = Array.isArray(__OUTBOX_CURRENT_ITEMS__) ? __OUTBOX_CURRENT_ITEMS__.slice() : [];
   const hasAnything = Array.isArray(items) && items.length > 0;
 
   if (hasAnything) {
     __OUTBOX_CURRENT_ITEMS__ = items.slice();
+  } else if (currentSnapshot.length > 0) {
+    items = currentSnapshot.slice();
   }
 
-  if (!hasAnything && (localQuick.total || 0) <= 0 && recentNow.length <= 0) {
+  if (!hasAnything && currentSnapshot.length <= 0 && (localQuick.total || 0) <= 0 && recentNow.length <= 0) {
     __OUTBOX_CURRENT_ITEMS__ = [];
     chip.style.display = "none";
     chip.classList.remove("pending", "error");
@@ -3230,6 +3253,7 @@ window.submitForm = async function submitForm(){
       const seededFormNameFa = String(
         APP.currentBundle?.form?.formNameFa ||
         APP.currentBundle?.form?.titleFa ||
+        (document.getElementById("formTitle") && document.getElementById("formTitle").textContent) ||
         ""
       ).trim();
 
