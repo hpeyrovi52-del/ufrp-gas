@@ -1182,6 +1182,45 @@ window.__UFRP_USER_EMAIL__ = <?php
     <script src="/client-offline.js"></script>
 
     <!-- =====================================================
+         RUNTIME ERROR CAPTURE
+         ===================================================== -->
+    <script>
+      window.addEventListener("error", function (e) {
+        try {
+          const line = document.getElementById("statusLine");
+          const txt  = document.getElementById("statusText");
+          if (line && txt) {
+            txt.textContent =
+              "خطای اجرا: " +
+              String(e && e.message ? e.message : "unknown") +
+              " | " +
+              String(e && e.filename ? e.filename.split("/").slice(-1)[0] : "inline") +
+              ":" +
+              String(e && e.lineno ? e.lineno : 0);
+            line.style.display = "flex";
+          }
+        } catch (_) {}
+      });
+
+      window.addEventListener("unhandledrejection", function (e) {
+        try {
+          const line = document.getElementById("statusLine");
+          const txt  = document.getElementById("statusText");
+          const reason = e && e.reason;
+          const msg =
+            typeof reason === "string"
+              ? reason
+              : String((reason && reason.message) || reason || "promise rejection");
+
+          if (line && txt) {
+            txt.textContent = "خطای اجرا: " + msg;
+            line.style.display = "flex";
+          }
+        } catch (_) {}
+      });
+    </script>
+
+    <!-- =====================================================
          APP BOOTSTRAP / DEBUG
          ===================================================== -->
     <script>
