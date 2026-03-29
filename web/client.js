@@ -362,6 +362,12 @@ function isRetryableServerOutboxError_(errMsg){
   );
 }
 
+function isRetryableLocalOutboxError_(errMsg){
+  return /failed to fetch|network|offline|timeout|timed out|502|503|504|upload_to_server_failed|local_api_unreachable|connection|disconnect|aborted|internet|سرور میانی|ارتباط با سرور|قطع میباشد/i.test(
+    String(errMsg || "").trim()
+  );
+}
+
 function outboxStagePercent_(stageKey){
   return (
     stageKey === "local_initial_queue" ? 10 :
@@ -764,28 +770,46 @@ function buildGeneralOutboxChipText_(items){
 function normalizeLocalOutboxItems_(items){
   return (Array.isArray(items) ? items : []).map((x) => {
     const rawStatus = String(x?.status || "queued").trim();
+    const rawErr = String(x?.lastError || "").trim();
+    const retryableLocalWait = isRetryableLocalOutboxError_(rawErr);
 
-    const stageKey =
-      rawStatus === "processing" ? "local_to_server_uploading" :
-      rawStatus === "done" ? "done" :
-      rawStatus === "failed" ? "failed_non_retryable" :
-      "local_initial_queue";
+    let compatStatus = rawStatus || "queued";
+    let stageKey = "local_initial_queue";
+    let uiDeleteAllowed = false;
+    let uiErrorText = "";
+    let uiStatusOverride = "";
+
+    if (rawStatus === "processing") {
+      compatStatus = "processing";
+      stageKey = "local_to_server_uploading";
+    } else if (rawStatus === "done") {
+      compatStatus = "done";
+      stageKey = "done";
+    } else if (rawStatus === "failed" && retryableLocalWait) {
+      compatStatus = "queued";
+      stageKey = "local_to_server_uploading";
+      uiStatusOverride = "ارتباط با سرور میانی قطع میباشد";
+    } else if (rawStatus === "failed") {
+      compatStatus = "failed";
+      stageKey = "failed_non_retryable";
+      uiDeleteAllowed = true;
+      uiErrorText = "خطای غیر قابل رفع، مورد مجدد باید از طرف کاربر بارگذاری شود";
+    } else {
+      compatStatus = "queued";
+      stageKey = "local_initial_queue";
+    }
 
     return {
       ...x,
+      status: compatStatus,
       sourceLayer: "local",
       uiStageKey: stageKey,
       uiPercent: outboxStagePercent_(stageKey),
-      uiDeleteAllowed: stageKey === "failed_non_retryable",
-      uiErrorText:
-        stageKey === "failed_non_retryable"
-          ? "خطای غیر قابل رفع، مورد مجدد باید از طرف کاربر بارگذاری شود"
-          : "",
-      rawOutboxError: String(x?.lastError || "").trim(),
-      lastError:
-        stageKey === "failed_non_retryable"
-          ? "خطای غیر قابل رفع، مورد مجدد باید از طرف کاربر بارگذاری شود"
-          : ""
+      uiDeleteAllowed: uiDeleteAllowed,
+      uiErrorText: uiErrorText,
+      uiStatusOverride: uiStatusOverride,
+      rawOutboxError: rawErr,
+      lastError: uiDeleteAllowed ? uiErrorText : ""
     };
   });
 }
@@ -1102,12 +1126,41 @@ let __OUTBOX_LAST_RENDERED_ITEMS__ = [];
 let __OUTBOX_CURRENT_ITEMS__ = [];
 
 async function outboxRemove(id){
+  const rawId = String(id || "").trim();
+
   try {
-    if (window.__OFFLINE__ && typeof window.__OFFLINE__.removeQueueItem === "function") {
-      await window.__OFFLINE__.removeQueueItem(id);
+    if (window.__OFFLINE__ && typeof window.__OFFLINE__.removeQueueItem === "function" && rawId) {
+      await window.__OFFLINE__.removeQueueItem(rawId);
     }
   } catch (e) {
     console.warn("Outbox remove failed:", e);
+  }
+
+  try {
+    let submissionUid = "";
+
+    const current = Array.isArray(__OUTBOX_CURRENT_ITEMS__) ? __OUTBOX_CURRENT_ITEMS__ : [];
+    const found = current.find(x => String(x?.id || "").trim() === rawId);
+    if (found) {
+      submissionUid = outboxItemKey_(found);
+    }
+
+    if (!submissionUid && rawId.startsWith("active-")) {
+      submissionUid = rawId.slice("active-".length).trim();
+    }
+    if (!submissionUid && rawId.startsWith("recent-")) {
+      submissionUid = rawId.slice("recent-".length).trim();
+    }
+
+    if (submissionUid) {
+      removeActiveOutboxItem_(submissionUid);
+
+      __OUTBOX_CURRENT_ITEMS__ = current.filter(x => outboxItemKey_(x) !== submissionUid);
+      __OUTBOX_LAST_RENDERED_ITEMS__ = (Array.isArray(__OUTBOX_LAST_RENDERED_ITEMS__) ? __OUTBOX_LAST_RENDERED_ITEMS__ : [])
+        .filter(x => outboxItemKey_(x) !== submissionUid);
+    }
+  } catch (e) {
+    console.warn("Active outbox remove cleanup failed:", e);
   }
 
   try { updateOutboxChip(); } catch(_) {}
