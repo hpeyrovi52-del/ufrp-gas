@@ -300,11 +300,19 @@ function _clearDraftSubmissionUid_(){ return clearDraftSubmissionUid(); }
 
 async function fetchServerQueueItems(){
   try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => {
+      try { ctl.abort(); } catch (_) {}
+    }, 2500);
+
     const res = await fetch("/api/queue-item.php", {
       method: "GET",
       credentials: "include",
-      cache: "no-store"
+      cache: "no-store",
+      signal: ctl.signal
     });
+
+    clearTimeout(t);
 
     if (!res || !res.ok) throw new Error("SERVER_QUEUE_ITEMS_HTTP_" + (res ? res.status : 0));
 
@@ -318,11 +326,19 @@ async function fetchServerQueueItems(){
 
 async function fetchServerQueueSummary(){
   try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => {
+      try { ctl.abort(); } catch (_) {}
+    }, 2500);
+
     const res = await fetch("/api/queue-summary.php", {
       method: "GET",
       credentials: "include",
-      cache: "no-store"
+      cache: "no-store",
+      signal: ctl.signal
     });
+
+    clearTimeout(t);
 
     if (!res || !res.ok) throw new Error("SERVER_QUEUE_SUMMARY_HTTP_" + (res ? res.status : 0));
 
@@ -928,6 +944,8 @@ async function syncActiveOutboxRegistry_(){
 
   let localItems = [];
   let serverItems = [];
+  let serverSummary = { total: 0, queued: 0, processing: 0, failed: 0, sent: 0 };
+  let serverFetchFailed = false;
 
   try {
     if (window.__OFFLINE__ && typeof window.__OFFLINE__.getQueue === "function") {
@@ -939,10 +957,15 @@ async function syncActiveOutboxRegistry_(){
   }
 
   try {
-    const rawServerItems = await fetchServerQueueItems();
+    const [rawServerItems, rawServerSummary] = await Promise.all([
+      fetchServerQueueItems(),
+      fetchServerQueueSummary()
+    ]);
     serverItems = normalizeServerOutboxItems_(rawServerItems);
+    serverSummary = rawServerSummary || serverSummary;
   } catch (e) {
-    console.warn("Server outbox items failed:", e);
+    serverFetchFailed = true;
+    console.warn("Server outbox sync failed:", e);
   }
 
   const activeMap = new Map();
@@ -997,7 +1020,32 @@ async function syncActiveOutboxRegistry_(){
       continue;
     }
 
-    visible.push(merged);
+    const item = { ...merged };
+    const rawErr = String(item?.rawOutboxError || item?.lastError || "").trim();
+
+    if (serverFetchFailed) {
+      item.uiStatusOverride = "ارتباط با سرور میانی قطع میباشد";
+    } else if (
+      isRetryableServerOutboxError_(rawErr) &&
+      outboxStageRank_(stageKey) >= outboxStageRank_("server_to_google_queue")
+    ) {
+      item.uiStatusOverride = "ارتباط سرور میانی با اینترنت قطع میباشد";
+    } else if (
+      /failed to fetch|network|offline|timeout|timed out/i.test(rawErr) &&
+      outboxStageRank_(stageKey) < outboxStageRank_("server_to_google_queue")
+    ) {
+      item.uiStatusOverride = "ارتباط با سرور میانی قطع میباشد";
+    } else {
+      item.uiStatusOverride = "";
+    }
+
+    visible.push(item);
+  }
+
+  if (!visible.length && !serverFetchFailed && Number(serverSummary?.total || 0) <= 0) {
+    setActiveOutboxRegistry_([]);
+    __OUTBOX_CURRENT_ITEMS__ = [];
+    return [];
   }
 
   const keep = visible
@@ -1199,14 +1247,6 @@ function renderOutboxChipFromItems_(chip, txt, items){
 
   chip.style.display = "inline-flex";
   chip.classList.remove("pending", "error");
-
-  const online = navigator.onLine && !window.__UFRP_FORCE_OFFLINE__;
-  if (!online) {
-    txt.textContent =
-      `ارتباط اینترنت قطع میباشد. ${toFaDigits(String(arr.length || 1))} فرم در انتظار ارسال پس از برقراری ارتباط میباشد`;
-    chip.classList.add("pending");
-    return;
-  }
 
   txt.innerHTML =
     buildGeneralOutboxChipText_(arr) ||
