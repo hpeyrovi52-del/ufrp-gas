@@ -1028,18 +1028,39 @@ async function syncActiveOutboxRegistry_(){
 
     if (!merged) continue;
 
-    if (localMap.has(key)) {
+    const hadActive = activeMap.has(key);
+    const hasLocalNow = localMap.has(key);
+    const hasServerNow = serverMap.has(key);
+
+    const activeStageKey = String((activeMap.get(key)?.uiStageKey) || "").trim();
+    const activeStageRank = outboxStageRank_(activeStageKey);
+
+    // If an item had already reached a server-side stage in the local registry,
+    // and now it is absent from both local + server active queues, and the
+    // server read succeeded, then treat it as completed.
+    if (
+      hadActive &&
+      activeStageRank >= outboxStageRank_("server_to_google_queue") &&
+      !hasLocalNow &&
+      !hasServerNow &&
+      !serverFetchFailed &&
+      (Number(serverSummary?.sent || 0) > 0 || Number(serverSummary?.total || 0) === 0)
+    ) {
+      removeActiveOutboxItem_(key);
+      continue;
+    }
+
+    if (hasLocalNow) {
       merged = mergeOutboxItemOverlay_(merged, localMap.get(key));
     }
 
-    if (serverMap.has(key)) {
+    if (hasServerNow) {
       merged = mergeOutboxItemOverlay_(merged, serverMap.get(key));
     }
 
     const bucket = String(merged?.serverBucket || "").trim();
     const stageKey = String(merged?.uiStageKey || "").trim();
 
-    // Only explicit terminal server-side completion may remove the item
     if (bucket === "sent" || stageKey === "done") {
       removeActiveOutboxItem_(key);
       continue;
@@ -1067,7 +1088,6 @@ async function syncActiveOutboxRegistry_(){
     visible.push(item);
   }
 
-  // Keep registry in sync with still-active items only
   const keep = visible
     .map(registryEntryFromOutboxItem_)
     .filter(Boolean);
