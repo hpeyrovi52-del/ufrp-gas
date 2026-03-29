@@ -851,8 +851,81 @@ function normalizeServerOutboxItems_(items){
   });
 }
 
-async function outboxGetItems(){
+function outboxItemsFromRegistry_(){
+  const items = normalizeActiveOutboxRegistryItems_();
+  __OUTBOX_CURRENT_ITEMS__ = items.slice();
+  return items;
+}
+
+function mergeOutboxItemOverlay_(base, overlay){
+  const b = base || {};
+  const o = overlay || {};
+
+  const bAnswers = Array.isArray(b?.payload?.answers) ? b.payload.answers : [];
+  const oAnswers = Array.isArray(o?.payload?.answers) ? o.payload.answers : [];
+
+  const bRank = outboxStageRank_(String(b?.uiStageKey || "").trim());
+  const oRank = outboxStageRank_(String(o?.uiStageKey || "").trim());
+  const useOverlayStage = oRank >= bRank;
+
+  return {
+    ...b,
+    ...o,
+    uiStageKey: useOverlayStage
+      ? String(o?.uiStageKey || b?.uiStageKey || "").trim()
+      : String(b?.uiStageKey || o?.uiStageKey || "").trim(),
+    uiPercent: useOverlayStage
+      ? Number(o?.uiPercent || b?.uiPercent || 0)
+      : Number(b?.uiPercent || o?.uiPercent || 0),
+    status: useOverlayStage
+      ? String(o?.status || b?.status || "processing").trim()
+      : String(b?.status || o?.status || "processing").trim(),
+    uiDeleteAllowed: !!(o?.uiDeleteAllowed || b?.uiDeleteAllowed),
+    uiErrorText: String(o?.uiErrorText || b?.uiErrorText || "").trim(),
+    payload: {
+      ...(b?.payload || {}),
+      ...(o?.payload || {}),
+      formKey: String(o?.payload?.formKey || b?.payload?.formKey || "").trim(),
+      formNameFa: String(b?.payload?.formNameFa || o?.payload?.formNameFa || "").trim(),
+      submissionUid: String(
+        o?.payload?.submissionUid ||
+        b?.payload?.submissionUid ||
+        outboxItemKey_(b) ||
+        outboxItemKey_(o) ||
+        ""
+      ).trim(),
+      answers: preferRicherOutboxAnswers_(bAnswers, oAnswers)
+    }
+  };
+}
+
+function registryEntryFromOutboxItem_(it){
+  const key = outboxItemKey_(it);
+  if (!key) return null;
+
+  return {
+    submissionUid: key,
+    formKey: String(it?.payload?.formKey || "").trim(),
+    formNameFa: String(it?.payload?.formNameFa || "").trim(),
+    answers: Array.isArray(it?.payload?.answers) ? it.payload.answers : [],
+    uiStageKey: String(it?.uiStageKey || "local_to_server_uploading").trim(),
+    uiPercent: Number(it?.uiPercent || outboxStagePercent_("local_to_server_uploading")),
+    uiDeleteAllowed: !!it?.uiDeleteAllowed,
+    uiErrorText: String(it?.uiErrorText || "").trim(),
+    status: String(it?.status || "processing").trim() || "processing",
+    createdAtMs: Date.parse(String(it?.createdAt || "")) || Date.now(),
+    updatedAtMs: Date.now()
+  };
+}
+
+async function syncActiveOutboxRegistry_(){
   const activeItems = normalizeActiveOutboxRegistryItems_();
+
+  if (!activeItems.length) {
+    __OUTBOX_CURRENT_ITEMS__ = [];
+    return [];
+  }
+
   let localItems = [];
   let serverItems = [];
 
@@ -872,112 +945,77 @@ async function outboxGetItems(){
     console.warn("Server outbox items failed:", e);
   }
 
-  const merged = new Map();
+  const activeMap = new Map();
+  const localMap  = new Map();
+  const serverMap = new Map();
 
-  // 1) source of truth: active local registry
   for (const it of activeItems) {
-    const key = outboxItemKey_(it);
-    if (!key) continue;
-    merged.set(key, it);
+    const k = outboxItemKey_(it);
+    if (k) activeMap.set(k, it);
   }
 
-  // 2) local queue can only advance/refresh status, never replace title/answers
   for (const it of localItems) {
-    const key = outboxItemKey_(it);
-    if (!key) continue;
-
-    const prev = merged.get(key);
-    if (!prev) {
-      merged.set(key, it);
-      continue;
-    }
-
-    const prevAnswers = Array.isArray(prev?.payload?.answers) ? prev.payload.answers : [];
-    const nextAnswers = Array.isArray(it?.payload?.answers) ? it.payload.answers : [];
-
-    merged.set(key, {
-      ...prev,
-      ...it,
-      payload: {
-        ...(prev?.payload || {}),
-        ...(it?.payload || {}),
-        formNameFa: String(prev?.payload?.formNameFa || it?.payload?.formNameFa || "").trim(),
-        answers: preferRicherOutboxAnswers_(prevAnswers, nextAnswers)
-      }
-    });
+    const k = outboxItemKey_(it);
+    if (k) localMap.set(k, it);
   }
 
-  // 3) server queue may only update stage/status of an existing item
   for (const it of serverItems) {
-    const key = outboxItemKey_(it);
-    if (!key) continue;
-
-    const prev = merged.get(key);
-    if (!prev) {
-      // if somehow server sees an item before local registry does, accept it
-      merged.set(key, it);
-      continue;
-    }
-
-    const prevAnswers = Array.isArray(prev?.payload?.answers) ? prev.payload.answers : [];
-    const nextAnswers = Array.isArray(it?.payload?.answers) ? it.payload.answers : [];
-
-    merged.set(key, {
-      ...prev,
-      ...it,
-      payload: {
-        ...(prev?.payload || {}),
-        ...(it?.payload || {}),
-        formNameFa: String(prev?.payload?.formNameFa || it?.payload?.formNameFa || "").trim(),
-        answers: preferRicherOutboxAnswers_(prevAnswers, nextAnswers)
-      }
-    });
+    const k = outboxItemKey_(it);
+    if (k) serverMap.set(k, it);
   }
 
-  let mergedItems = Array.from(merged.values());
-  mergedItems = stabilizeOutboxItems_(mergeWithCurrentOutboxSnapshot_(mergedItems));
+  const allKeys = new Set([
+    ...Array.from(activeMap.keys()),
+    ...Array.from(localMap.keys()),
+    ...Array.from(serverMap.keys())
+  ]);
 
-  // 4) definitive completion cleanup only
-  const keep = [];
   const visible = [];
 
-  for (const it of mergedItems) {
-    const key = outboxItemKey_(it);
-    if (!key) continue;
+  for (const key of Array.from(allKeys)) {
+    let merged =
+      activeMap.get(key) ||
+      localMap.get(key) ||
+      serverMap.get(key) ||
+      null;
 
-    const stageKey = String(it?.uiStageKey || "").trim();
-    const bucket = String(it?.serverBucket || "").trim();
-    const doneNow = (stageKey === "done" || bucket === "sent");
+    if (!merged) continue;
 
-    if (doneNow) {
+    if (localMap.has(key)) {
+      merged = mergeOutboxItemOverlay_(merged, localMap.get(key));
+    }
+
+    if (serverMap.has(key)) {
+      merged = mergeOutboxItemOverlay_(merged, serverMap.get(key));
+    }
+
+    const bucket = String(merged?.serverBucket || "").trim();
+    const stageKey = String(merged?.uiStageKey || "").trim();
+
+    if (bucket === "sent" || stageKey === "done") {
       removeActiveOutboxItem_(key);
       continue;
     }
 
-    visible.push(it);
-    keep.push({
-      submissionUid: key,
-      formKey: String(it?.payload?.formKey || "").trim(),
-      formNameFa: String(it?.payload?.formNameFa || "").trim(),
-      answers: Array.isArray(it?.payload?.answers) ? it.payload.answers : [],
-      uiStageKey: stageKey || "local_to_server_uploading",
-      uiPercent: Number(it?.uiPercent || 0),
-      uiDeleteAllowed: !!it?.uiDeleteAllowed,
-      uiErrorText: String(it?.uiErrorText || "").trim(),
-      status: String(it?.status || "processing").trim() || "processing",
-      createdAtMs: Date.parse(String(it?.createdAt || "")) || Date.now(),
-      updatedAtMs: Date.now()
-    });
+    visible.push(merged);
   }
+
+  const keep = visible
+    .map(registryEntryFromOutboxItem_)
+    .filter(Boolean);
 
   setActiveOutboxRegistry_(keep);
   __OUTBOX_CURRENT_ITEMS__ = visible.slice();
 
-  return visible;
+  return visible.slice();
 }
+
+async function outboxGetItems(){
+  return outboxItemsFromRegistry_();
+}
+
 async function outboxGetSummary(){
-  const items = await outboxGetItems().catch(() => []);
-  const arr = Array.isArray(items) ? items : [];
+  const arr = outboxItemsFromRegistry_();
 
   const queued = arr.filter(x => String(x?.status || "").trim() === "queued").length;
   const processing = arr.filter(x => String(x?.status || "").trim() === "processing").length;
@@ -1001,6 +1039,7 @@ async function outboxGetSummary(){
     recentTotal: 0
   };
 }
+
 function outboxAdd(formKey){
   try { updateOutboxChip(); } catch(_) {}
   return null;
@@ -1014,7 +1053,6 @@ let __OUTBOX_PANEL_RENDER_TOKEN__ = 0;
 let __OUTBOX_LAST_RENDERED_ITEMS__ = [];
 let __OUTBOX_CURRENT_ITEMS__ = [];
 
-
 async function outboxRemove(id){
   try {
     if (window.__OFFLINE__ && typeof window.__OFFLINE__.removeQueueItem === "function") {
@@ -1027,88 +1065,29 @@ async function outboxRemove(id){
   try { updateOutboxChip(); } catch(_) {}
 }
 
-async function showOutboxDetails(){
-  const panel = document.getElementById("outboxPanel");
-  const body  = document.getElementById("outboxPanelBody");
-  if (!panel || !body) return;
+function renderOutboxPanelBody_(items){
+  const body = document.getElementById("outboxPanelBody");
+  if (!body) return;
 
-  const renderToken = ++__OUTBOX_PANEL_RENDER_TOKEN__;
-  const wasAlreadyOpen = !panel.classList.contains("hidden");
-
-  if (!wasAlreadyOpen) {
-    panel.classList.remove("hidden");
-    window.__OUTBOX_PANEL_OPEN__ = true;
-    scheduleOutboxLiveRefresh_();
+  if (!Array.isArray(items) || !items.length) {
+    body.innerHTML = `<div style="color:rgba(17,24,39,0.68);">صف ارسال خالی است.</div>`;
+    __OUTBOX_LAST_RENDERED_ITEMS__ = [];
+    return;
   }
 
-  let items = Array.isArray(__OUTBOX_CURRENT_ITEMS__) ? __OUTBOX_CURRENT_ITEMS__.slice() : [];
-  let liveEvidence = items.length > 0;
+  const orderedItems = items.slice().sort((a, b) => {
+    return outboxStageRank_(String(a?.uiStageKey || "").trim()) -
+           outboxStageRank_(String(b?.uiStageKey || "").trim());
+  });
 
-  try {
-    const recentNow = normalizeRecentOutboxBridgeItems_();
-    if (recentNow.length) {
-      const keyed = new Map();
-
-      for (const it of items) {
-        const k = outboxItemKey_(it);
-        if (k) keyed.set(k, it);
-      }
-      for (const it of recentNow) {
-        const k = outboxItemKey_(it);
-        if (k && !keyed.has(k)) keyed.set(k, it);
-      }
-
-      items = Array.from(keyed.values());
-      liveEvidence = true;
-    }
-
-    if (!items.length) {
-      const fetched = await outboxGetItems();
-      if (Array.isArray(fetched) && fetched.length) {
-        items = fetched;
-        liveEvidence = true;
-      }
-    }
-  } catch (_) {
-    items = items || [];
-  }
-
-  if (renderToken !== __OUTBOX_PANEL_RENDER_TOKEN__) return;
-  if (panel.classList.contains("hidden")) return;
-
-  if (!items.length) {
-    if (!liveEvidence) {
-      __OUTBOX_LAST_RENDERED_ITEMS__ = [];
-      body.innerHTML = `<div style="color:rgba(17,24,39,0.68);">صف ارسال خالی است.</div>`;
-      return;
-    }
-
-    const fallbackItems = Array.isArray(__OUTBOX_LAST_RENDERED_ITEMS__) ? __OUTBOX_LAST_RENDERED_ITEMS__ : [];
-    if (!fallbackItems.length) {
-      body.innerHTML = `<div style="color:rgba(17,24,39,0.68);">صف ارسال خالی است.</div>`;
-      return;
-    }
-    items = fallbackItems.slice();
-  }
-
-  const stageRank = (x) => {
-    const k = String(x?.uiStageKey || "").trim();
-    return (
-      k === "failed_non_retryable" ? 0 :
-      k === "local_to_server_uploading" ? 1 :
-      k === "local_initial_queue" ? 2 :
-      k === "server_to_google_uploading" ? 3 :
-      k === "google_finalizing" ? 4 :
-      k === "server_to_google_queue" ? 5 :
-      k === "done" ? 6 : 9
-    );
-  };
-
-  const orderedItems = items.slice().sort((a, b) => stageRank(a) - stageRank(b));
   __OUTBOX_LAST_RENDERED_ITEMS__ = orderedItems.slice();
 
   const rows = orderedItems.slice(0, 20).map((x, i) => {
-    const st = outboxStageText_(String(x?.uiStageKey || "").trim()) || String(x?.status || "queued");
+    const st =
+      String(x?.uiStatusOverride || "").trim() ||
+      outboxStageText_(String(x?.uiStageKey || "").trim()) ||
+      String(x?.status || "queued");
+
     const displayTitle = resolveOutboxDisplayTitle_(x);
     const err = String(x?.uiErrorText || x?.lastError || "").trim();
     const allowDelete = !!x?.uiDeleteAllowed;
@@ -1177,41 +1156,84 @@ async function showOutboxDetails(){
     };
   });
 }
+
+async function showOutboxDetails(){
+  const panel = document.getElementById("outboxPanel");
+  if (!panel) return;
+
+  const renderToken = ++__OUTBOX_PANEL_RENDER_TOKEN__;
+  const wasAlreadyOpen = !panel.classList.contains("hidden");
+
+  if (!wasAlreadyOpen) {
+    panel.classList.remove("hidden");
+    window.__OUTBOX_PANEL_OPEN__ = true;
+    scheduleOutboxLiveRefresh_();
+  }
+
+  const immediate = outboxItemsFromRegistry_();
+  renderOutboxPanelBody_(immediate);
+
+  const synced = await syncActiveOutboxRegistry_().catch(() => immediate);
+
+  if (renderToken !== __OUTBOX_PANEL_RENDER_TOKEN__) return;
+  if (panel.classList.contains("hidden")) return;
+
+  if (!Array.isArray(synced) || !synced.length) {
+    panel.classList.add("hidden");
+    window.__OUTBOX_PANEL_OPEN__ = false;
+    stopOutboxLiveRefresh_();
+    return;
+  }
+
+  renderOutboxPanelBody_(synced);
+}
+
+function renderOutboxChipFromItems_(chip, txt, items){
+  const arr = Array.isArray(items) ? items : [];
+
+  if (!arr.length) {
+    chip.style.display = "none";
+    chip.classList.remove("pending", "error");
+    return;
+  }
+
+  chip.style.display = "inline-flex";
+  chip.classList.remove("pending", "error");
+
+  const online = navigator.onLine && !window.__UFRP_FORCE_OFFLINE__;
+  if (!online) {
+    txt.textContent =
+      `ارتباط اینترنت قطع میباشد. ${toFaDigits(String(arr.length || 1))} فرم در انتظار ارسال پس از برقراری ارتباط میباشد`;
+    chip.classList.add("pending");
+    return;
+  }
+
+  txt.innerHTML =
+    buildGeneralOutboxChipText_(arr) ||
+    `${toFaDigits(String(arr.length || 1))} فرم در حال پردازش میباشد`;
+
+  chip.classList.add(txt.innerHTML.includes("ارسال ناموفق") ? "error" : "pending");
+}
+
 async function updateOutboxChip(){
   const chip = document.getElementById("outboxChip");
   const txt  = document.getElementById("outboxText");
   if (!chip || !txt) return;
 
-  const currentSnapshot = normalizeActiveOutboxRegistryItems_();
-  __OUTBOX_CURRENT_ITEMS__ = currentSnapshot.slice();
+  const immediate = outboxItemsFromRegistry_();
+  renderOutboxChipFromItems_(chip, txt, immediate);
 
-  let baseItems = currentSnapshot.slice();
-
-  if (baseItems.length) {
-    chip.style.display = "inline-flex";
-    chip.classList.remove("pending", "error");
-    txt.innerHTML = buildGeneralOutboxChipText_(baseItems) || `${toFaDigits(String(baseItems.length))} فرم در حال پردازش میباشد`;
-    chip.classList.add("pending");
+  if (!immediate.length) {
+    const panel = document.getElementById("outboxPanel");
+    if (panel) panel.classList.add("hidden");
+    window.__OUTBOX_PANEL_OPEN__ = false;
+    stopOutboxLiveRefresh_();
+    return;
   }
 
-  let items = [];
-  try {
-    items = await outboxGetItems();
-  } catch (_) {
-    items = [];
-  }
+  const synced = await syncActiveOutboxRegistry_().catch(() => immediate);
 
-  const hasAnything = Array.isArray(items) && items.length > 0;
-  const hasLiveEvidence = hasAnything || currentSnapshot.length > 0;
-
-  if (hasAnything) {
-    __OUTBOX_CURRENT_ITEMS__ = mergeWithCurrentOutboxSnapshot_(items).slice();
-    items = __OUTBOX_CURRENT_ITEMS__.slice();
-  } else if (hasLiveEvidence && __OUTBOX_CURRENT_ITEMS__.length > 0) {
-    items = __OUTBOX_CURRENT_ITEMS__.slice();
-  }
-
-  if (!hasLiveEvidence) {
+  if (!Array.isArray(synced) || !synced.length) {
     __OUTBOX_CURRENT_ITEMS__ = [];
     __OUTBOX_LAST_RENDERED_ITEMS__ = [];
     chip.style.display = "none";
@@ -1224,28 +1246,10 @@ async function updateOutboxChip(){
     return;
   }
 
-  chip.style.display = "inline-flex";
-  chip.classList.remove("pending", "error");
-
-  const online = navigator.onLine && !window.__UFRP_FORCE_OFFLINE__;
-
-  if (!online) {
-    const waiting = Math.max(
-      Number(currentSnapshot.length || 0),
-      Number(Array.isArray(items) ? items.length : 0),
-      Number(__OUTBOX_CURRENT_ITEMS__.length || 0)
-    );
-    txt.textContent =
-      `ارتباط اینترنت قطع میباشد. ${toFaDigits(String(waiting || 1))} فرم در انتظار ارسال پس از برقراری ارتباط میباشد`;
-    chip.classList.add("pending");
-    return;
-  }
-
-  txt.innerHTML = buildGeneralOutboxChipText_(items) || `${toFaDigits(String(items.length || 1))} فرم در حال پردازش میباشد`;
-  chip.classList.add(txt.innerHTML.includes("ارسال ناموفق") ? "error" : "pending");
+  renderOutboxChipFromItems_(chip, txt, synced);
 
   if (window.__OUTBOX_PANEL_OPEN__) {
-    showOutboxDetails().catch(() => {});
+    renderOutboxPanelBody_(synced);
   }
 }
 document.addEventListener("click", (e) => {
@@ -1264,23 +1268,7 @@ function scheduleOutboxLiveRefresh_(){
 
     __OUTBOX_LIVE_REFRESH_TIMER__ = setInterval(async () => {
       try {
-        const s = await outboxGetSummary();
-        const active =
-          Number(s?.queued || 0) +
-          Number(s?.processing || 0) +
-          Number(s?.failed || 0);
-
-        if (active <= 0) {
-          clearInterval(__OUTBOX_LIVE_REFRESH_TIMER__);
-          __OUTBOX_LIVE_REFRESH_TIMER__ = null;
-          return;
-        }
-
         await updateOutboxChip();
-
-        if (window.__OUTBOX_PANEL_OPEN__) {
-          await showOutboxDetails();
-        }
       } catch (_) {}
     }, 2000);
   } catch (_) {}
