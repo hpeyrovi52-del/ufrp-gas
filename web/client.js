@@ -493,6 +493,67 @@ function resolveOutboxDisplayTitle_(x){
   return displayTitle || "فرم بدون نام";
 }
 
+function outboxStageRank_(stageKey){
+  return (
+    stageKey === "local_initial_queue" ? 10 :
+    stageKey === "local_to_server_uploading" ? 20 :
+    stageKey === "server_to_google_queue" ? 40 :
+    stageKey === "server_to_google_uploading" ? 70 :
+    stageKey === "google_finalizing" ? 90 :
+    stageKey === "done" ? 100 :
+    stageKey === "failed_non_retryable" ? 1000 : 0
+  );
+}
+
+function stabilizeOutboxItems_(items){
+  const arr = Array.isArray(items) ? items : [];
+  const prev = Array.isArray(__OUTBOX_LAST_RENDERED_ITEMS__) ? __OUTBOX_LAST_RENDERED_ITEMS__ : [];
+  if (!prev.length) return arr;
+
+  const getKey = (it) =>
+    String(
+      ((it?.payload?.answers || []).find(a => String(a?.title || "").trim() === "__SubmissionUID") || {}).value ||
+      it?.payload?.submissionUid ||
+      it?.submissionUid ||
+      it?.id ||
+      ""
+    ).trim() || String(it?.id || "").trim();
+
+  const prevMap = new Map();
+  for (const it of prev) {
+    const key = getKey(it);
+    if (key) prevMap.set(key, it);
+  }
+
+  return arr.map((it) => {
+    const key = getKey(it);
+    if (!key) return it;
+
+    const old = prevMap.get(key);
+    if (!old) return it;
+
+    const oldRank = outboxStageRank_(String(old?.uiStageKey || "").trim());
+    const newRank = outboxStageRank_(String(it?.uiStageKey || "").trim());
+
+    if (newRank >= oldRank) return it;
+
+    const oldAnswers = Array.isArray(old?.payload?.answers) ? old.payload.answers : [];
+    const newAnswers = Array.isArray(it?.payload?.answers) ? it.payload.answers : [];
+
+    return {
+      ...it,
+      uiStageKey: String(old?.uiStageKey || it?.uiStageKey || "").trim(),
+      uiPercent: Number(old?.uiPercent || it?.uiPercent || 0),
+      status: String(old?.status || it?.status || "").trim() || it.status,
+      payload: {
+        ...(it?.payload || {}),
+        formNameFa: String(old?.payload?.formNameFa || it?.payload?.formNameFa || "").trim(),
+        answers: newAnswers.length ? newAnswers : oldAnswers
+      }
+    };
+  });
+}
+
 function buildOutboxChipLinesFromItems_(items){
   const arr = Array.isArray(items) ? items : [];
   if (!arr.length) return [];
@@ -747,7 +808,7 @@ async function outboxGetItems(){
     removeRecentOutboxBridgeByUid_(key);
   }
 
-  return Array.from(merged.values());
+  return stabilizeOutboxItems_(Array.from(merged.values()));
 }
 async function outboxGetSummary(){
   let local = { total: 0, queued: 0, processing: 0, failed: 0 };
