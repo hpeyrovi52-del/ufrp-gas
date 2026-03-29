@@ -1028,11 +1028,24 @@ async function syncActiveOutboxRegistry_(){
 
     if (!merged) continue;
 
-    if (localMap.has(key)) {
+    const hadActive = activeMap.has(key);
+    const hasLocalNow = localMap.has(key);
+    const hasServerNow = serverMap.has(key);
+
+    // definitive disappearance:
+    // if it used to exist locally for UI, but now there is no local queue item
+    // and no server queue item for this submission, and the server read succeeded,
+    // then treat it as completed and remove it from the active registry.
+    if (hadActive && !hasLocalNow && !hasServerNow && !serverFetchFailed) {
+      removeActiveOutboxItem_(key);
+      continue;
+    }
+
+    if (hasLocalNow) {
       merged = mergeOutboxItemOverlay_(merged, localMap.get(key));
     }
 
-    if (serverMap.has(key)) {
+    if (hasServerNow) {
       merged = mergeOutboxItemOverlay_(merged, serverMap.get(key));
     }
 
@@ -1064,12 +1077,6 @@ async function syncActiveOutboxRegistry_(){
     }
 
     visible.push(item);
-  }
-
-  if (!visible.length && !serverFetchFailed && Number(serverSummary?.total || 0) <= 0) {
-    setActiveOutboxRegistry_([]);
-    __OUTBOX_CURRENT_ITEMS__ = [];
-    return [];
   }
 
   const keep = visible
