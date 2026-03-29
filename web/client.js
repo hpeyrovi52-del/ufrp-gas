@@ -1346,6 +1346,28 @@ document.addEventListener("click", (e) => {
   }
 });
 
+window.__UFRP_OUTBOX_SEED_ACTIVE__ = function (payload) {
+  try {
+    upsertActiveOutboxItem_(payload || {});
+    __OUTBOX_CURRENT_ITEMS__ = normalizeActiveOutboxRegistryItems_();
+
+    Promise.resolve()
+      .then(() => updateOutboxChip())
+      .catch(() => {});
+
+    if (window.__OUTBOX_PANEL_OPEN__) {
+      Promise.resolve()
+        .then(() => showOutboxDetails())
+        .catch(() => {});
+    }
+
+    return true;
+  } catch (e) {
+    console.warn("Outbox seed failed:", e);
+    return false;
+  }
+};
+
 window.OUTBOX = {
   add: outboxAdd,
   setStatus: outboxSetStatus,
@@ -3392,17 +3414,17 @@ window.submitForm = async function submitForm(){
         ""
       ).trim();
 
-      upsertActiveOutboxItem_({
-        formKey: APP.currentFormKey,
-        formNameFa: seededFormNameFa,
-        submissionUid: submissionUid,
-        answers: answers,
-        uiStageKey: "local_to_server_uploading",
-        uiPercent: outboxStagePercent_("local_to_server_uploading"),
-        status: "processing"
-      });
-
-      __OUTBOX_CURRENT_ITEMS__ = normalizeActiveOutboxRegistryItems_();
+      if (window.__UFRP_OUTBOX_SEED_ACTIVE__) {
+        window.__UFRP_OUTBOX_SEED_ACTIVE__({
+          formKey: APP.currentFormKey,
+          formNameFa: seededFormNameFa,
+          submissionUid: submissionUid,
+          answers: answers,
+          uiStageKey: "local_to_server_uploading",
+          uiPercent: 25,
+          status: "processing"
+        });
+      }
     } catch (_) {}
 
     console.log("Queued submission ID:", queuedId);
