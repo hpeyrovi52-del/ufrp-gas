@@ -1178,8 +1178,8 @@ window.__UFRP_USER_EMAIL__ = <?php
 </script>
 
     
-         <script src="/client.js"></script>
-    <script src="/client-offline.js"></script>
+         <script src="/client.js?v=<?php echo @filemtime(__DIR__ . "/client.js") ?: time(); ?>"></script>
+    <script src="/client-offline.js?v=<?php echo @filemtime(__DIR__ . "/client-offline.js") ?: time(); ?>"></script>
 
     <!-- =====================================================
          RUNTIME ERROR CAPTURE
