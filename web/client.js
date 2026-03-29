@@ -359,6 +359,78 @@ function outboxStagePercent_(stageKey){
 
 const __RECENT_OUTBOX_TTL_MS__ = 2 * 60 * 1000;
 
+function getActiveOutboxRegistry_(){
+  try {
+    const raw = sessionStorage.getItem("__UFRP_ACTIVE_OUTBOX__");
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function setActiveOutboxRegistry_(items){
+  try {
+    sessionStorage.setItem("__UFRP_ACTIVE_OUTBOX__", JSON.stringify(Array.isArray(items) ? items : []));
+  } catch (_) {}
+}
+
+function upsertActiveOutboxItem_(payload){
+  const submissionUid =
+    String(payload?.submissionUid || "").trim() ||
+    String((((payload?.answers || []).find(a => String(a?.title || "").trim() === "__SubmissionUID") || {}).value) || "").trim();
+
+  if (!submissionUid) return;
+
+  const items = getActiveOutboxRegistry_().filter(x => String(x?.submissionUid || "").trim() !== submissionUid);
+
+  items.push({
+    submissionUid,
+    formKey: String(payload?.formKey || "").trim(),
+    formNameFa: String(payload?.formNameFa || "").trim(),
+    answers: Array.isArray(payload?.answers) ? payload.answers : [],
+    uiStageKey: String(payload?.uiStageKey || "local_to_server_uploading").trim(),
+    uiPercent: Number(payload?.uiPercent || outboxStagePercent_("local_to_server_uploading")),
+    uiDeleteAllowed: !!payload?.uiDeleteAllowed,
+    uiErrorText: String(payload?.uiErrorText || "").trim(),
+    status: String(payload?.status || "processing").trim(),
+    createdAtMs: Number(payload?.createdAtMs || Date.now()),
+    updatedAtMs: Date.now()
+  });
+
+  setActiveOutboxRegistry_(items);
+}
+
+function removeActiveOutboxItem_(submissionUid){
+  const uid = String(submissionUid || "").trim();
+  if (!uid) return;
+  const items = getActiveOutboxRegistry_().filter(x => String(x?.submissionUid || "").trim() !== uid);
+  setActiveOutboxRegistry_(items);
+}
+
+function normalizeActiveOutboxRegistryItems_(){
+  return getActiveOutboxRegistry_().map((x) => ({
+    id: "active-" + String(x?.submissionUid || "").trim(),
+    submissionUid: String(x?.submissionUid || "").trim(),
+    status: String(x?.status || "processing").trim() || "processing",
+    sourceLayer: "active",
+    uiStageKey: String(x?.uiStageKey || "local_to_server_uploading").trim(),
+    uiPercent: Number(x?.uiPercent || outboxStagePercent_("local_to_server_uploading")),
+    uiDeleteAllowed: !!x?.uiDeleteAllowed,
+    uiErrorText: String(x?.uiErrorText || "").trim(),
+    rawOutboxError: "",
+    createdAt: new Date(Number(x?.createdAtMs || Date.now())).toISOString(),
+    updatedAt: new Date(Number(x?.updatedAtMs || Date.now())).toISOString(),
+    retryCount: 0,
+    payload: {
+      formKey: String(x?.formKey || "").trim(),
+      formNameFa: String(x?.formNameFa || "").trim(),
+      submissionUid: String(x?.submissionUid || "").trim(),
+      answers: Array.isArray(x?.answers) ? x.answers : []
+    }
+  }));
+}
+
 function getRecentOutboxBridge_(){
   try {
     const raw = sessionStorage.getItem("__UFRP_RECENT_OUTBOX__");
@@ -782,7 +854,7 @@ function normalizeServerOutboxItems_(items){
 async function outboxGetItems(){
   let localItems = [];
   let serverItems = [];
-  const recentItems = normalizeRecentOutboxBridgeItems_();
+  const activeItems = normalizeActiveOutboxRegistryItems_();
 
   try {
     if (window.__OFFLINE__ && typeof window.__OFFLINE__.getQueue === "function") {
@@ -802,32 +874,17 @@ async function outboxGetItems(){
 
   const merged = new Map();
 
-  const getKey = (it) =>
-    String(
-      ((it?.payload?.answers || []).find(a => String(a?.title || "").trim() === "__SubmissionUID") || {}).value ||
-      it?.payload?.submissionUid ||
-      it?.submissionUid ||
-      it?.id ||
-      ""
-    ).trim() || String(it?.id || "").trim();
-
-  const realKeys = new Set();
-
-  for (const it of localItems) {
-    const key = getKey(it);
+  for (const it of activeItems) {
+    const key = outboxItemKey_(it);
     if (!key) continue;
     merged.set(key, it);
-    realKeys.add(key);
   }
 
-  for (const it of serverItems) {
-    const key = getKey(it);
+  for (const it of localItems) {
+    const key = outboxItemKey_(it);
     if (!key) continue;
 
-    realKeys.add(key);
-
     const prev = merged.get(key);
-
     if (!prev) {
       merged.set(key, it);
       continue;
@@ -842,68 +899,97 @@ async function outboxGetItems(){
       payload: {
         ...(prev?.payload || {}),
         ...(it?.payload || {}),
+        formNameFa: String(prev?.payload?.formNameFa || it?.payload?.formNameFa || "").trim(),
         answers: preferRicherOutboxAnswers_(prevAnswers, nextAnswers)
       }
     });
   }
 
-  for (const it of recentItems) {
-    const key = getKey(it);
+  for (const it of serverItems) {
+    const key = outboxItemKey_(it);
     if (!key) continue;
-    if (!merged.has(key)) {
+
+    const prev = merged.get(key);
+    if (!prev) {
       merged.set(key, it);
+      continue;
     }
+
+    const prevAnswers = Array.isArray(prev?.payload?.answers) ? prev.payload.answers : [];
+    const nextAnswers = Array.isArray(it?.payload?.answers) ? it.payload.answers : [];
+
+    merged.set(key, {
+      ...prev,
+      ...it,
+      payload: {
+        ...(prev?.payload || {}),
+        ...(it?.payload || {}),
+        formNameFa: String(prev?.payload?.formNameFa || it?.payload?.formNameFa || "").trim(),
+        answers: preferRicherOutboxAnswers_(prevAnswers, nextAnswers)
+      }
+    });
   }
 
-  for (const key of Array.from(realKeys)) {
-    removeRecentOutboxBridgeByUid_(key);
-  }
+  const mergedItems = stabilizeOutboxItems_(mergeWithCurrentOutboxSnapshot_(Array.from(merged.values())));
 
-  return stabilizeOutboxItems_(mergeWithCurrentOutboxSnapshot_(Array.from(merged.values())));
+  const keep = [];
+  for (const it of mergedItems) {
+    const key = outboxItemKey_(it);
+    if (!key) continue;
+
+    const stageKey = String(it?.uiStageKey || "").trim();
+    const bucket = String(it?.serverBucket || "").trim();
+
+    if (stageKey === "done" || bucket === "sent") {
+      continue;
+    }
+
+    keep.push({
+      submissionUid: key,
+      formKey: String(it?.payload?.formKey || "").trim(),
+      formNameFa: String(it?.payload?.formNameFa || "").trim(),
+      answers: Array.isArray(it?.payload?.answers) ? it.payload.answers : [],
+      uiStageKey: stageKey || "local_to_server_uploading",
+      uiPercent: Number(it?.uiPercent || 0),
+      uiDeleteAllowed: !!it?.uiDeleteAllowed,
+      uiErrorText: String(it?.uiErrorText || "").trim(),
+      status: String(it?.status || "processing").trim() || "processing",
+      createdAtMs: Date.parse(String(it?.createdAt || "")) || Date.now(),
+      updatedAtMs: Date.now()
+    });
+  }
+  setActiveOutboxRegistry_(keep);
+
+  return mergedItems.filter(it => {
+    const stageKey = String(it?.uiStageKey || "").trim();
+    const bucket = String(it?.serverBucket || "").trim();
+    return !(stageKey === "done" || bucket === "sent");
+  });
 }
 async function outboxGetSummary(){
-  let local = { total: 0, queued: 0, processing: 0, failed: 0 };
-  let server = { total: 0, queued: 0, processing: 0, failed: 0, sent: 0 };
+  const items = await outboxGetItems().catch(() => []);
+  const arr = Array.isArray(items) ? items : [];
 
-  try {
-    if (window.__OFFLINE__ && typeof window.__OFFLINE__.getQueueSummary === "function") {
-      const q = await window.__OFFLINE__.getQueueSummary();
-      local = {
-        total: Number(q?.total || 0),
-        queued: Number(q?.queued || 0),
-        processing: Number(q?.processing || 0),
-        failed: Number(q?.failed || 0)
-      };
-    }
-  } catch (e) {
-    console.warn("Local outbox summary failed:", e);
-  }
-
-  try {
-    server = await fetchServerQueueSummary();
-  } catch (e) {
-    console.warn("Server outbox summary failed:", e);
-  }
-
-  const recent = normalizeRecentOutboxBridgeItems_();
-  const recentCount = recent.length;
+  const queued = arr.filter(x => String(x?.status || "").trim() === "queued").length;
+  const processing = arr.filter(x => String(x?.status || "").trim() === "processing").length;
+  const failed = arr.filter(x => String(x?.status || "").trim() === "failed").length;
 
   return {
-    total: local.total + server.total + recentCount,
-    queued: local.queued + server.queued,
-    processing: local.processing + server.processing + recentCount,
-    failed: local.failed + server.failed,
-    sent: Number(server.sent || 0),
-    localTotal: local.total,
-    localQueued: local.queued,
-    localProcessing: local.processing,
-    localFailed: local.failed,
-    serverTotal: server.total,
-    serverQueued: server.queued,
-    serverProcessing: server.processing,
-    serverFailed: server.failed,
-    serverSent: server.sent,
-    recentTotal: recentCount
+    total: arr.length,
+    queued,
+    processing,
+    failed,
+    sent: 0,
+    localTotal: 0,
+    localQueued: 0,
+    localProcessing: 0,
+    localFailed: 0,
+    serverTotal: 0,
+    serverQueued: 0,
+    serverProcessing: 0,
+    serverFailed: 0,
+    serverSent: 0,
+    recentTotal: 0
   };
 }
 function outboxAdd(formKey){
@@ -1087,32 +1173,10 @@ async function updateOutboxChip(){
   const txt  = document.getElementById("outboxText");
   if (!chip || !txt) return;
 
-  let localQuick = { total: 0, queued: 0, processing: 0, failed: 0 };
-  try {
-    if (window.__OFFLINE__ && typeof window.__OFFLINE__.getQueueSummary === "function") {
-      const q = await window.__OFFLINE__.getQueueSummary();
-      localQuick = {
-        total: Number(q?.total || 0),
-        queued: Number(q?.queued || 0),
-        processing: Number(q?.processing || 0),
-        failed: Number(q?.failed || 0)
-      };
-    }
-  } catch (_) {}
-
-  const recentNow = normalizeRecentOutboxBridgeItems_();
-  const currentSnapshot = Array.isArray(__OUTBOX_CURRENT_ITEMS__) ? __OUTBOX_CURRENT_ITEMS__.slice() : [];
+  const currentSnapshot = normalizeActiveOutboxRegistryItems_();
+  __OUTBOX_CURRENT_ITEMS__ = currentSnapshot.slice();
 
   let baseItems = currentSnapshot.slice();
-  if (!baseItems.length && recentNow.length) {
-    baseItems = recentNow.slice();
-    __OUTBOX_CURRENT_ITEMS__ = recentNow.slice();
-  } else if (!baseItems.length && (localQuick.total || 0) > 0) {
-    baseItems = new Array(Math.max(1, Number(localQuick.total || 0))).fill(null).map(() => ({
-      uiStageKey: "local_to_server_uploading",
-      payload: { answers: [] }
-    }));
-  }
 
   if (baseItems.length) {
     chip.style.display = "inline-flex";
@@ -1129,7 +1193,7 @@ async function updateOutboxChip(){
   }
 
   const hasAnything = Array.isArray(items) && items.length > 0;
-  const hasLiveEvidence = hasAnything || (localQuick.total || 0) > 0 || recentNow.length > 0;
+  const hasLiveEvidence = hasAnything || currentSnapshot.length > 0;
 
   if (hasAnything) {
     __OUTBOX_CURRENT_ITEMS__ = mergeWithCurrentOutboxSnapshot_(items).slice();
@@ -1158,8 +1222,7 @@ async function updateOutboxChip(){
 
   if (!online) {
     const waiting = Math.max(
-      Number(localQuick.total || 0),
-      Number(recentNow.length || 0),
+      Number(currentSnapshot.length || 0),
       Number(Array.isArray(items) ? items.length : 0),
       Number(__OUTBOX_CURRENT_ITEMS__.length || 0)
     );
@@ -3320,33 +3383,17 @@ window.submitForm = async function submitForm(){
         ""
       ).trim();
 
-      addRecentOutboxBridge_({
+      upsertActiveOutboxItem_({
         formKey: APP.currentFormKey,
         formNameFa: seededFormNameFa,
         submissionUid: submissionUid,
-        answers: answers
-      });
-
-      __OUTBOX_CURRENT_ITEMS__ = [{
-        id: "seed-" + submissionUid,
-        submissionUid: submissionUid,
-        status: "processing",
-        sourceLayer: "recent",
+        answers: answers,
         uiStageKey: "local_to_server_uploading",
         uiPercent: outboxStagePercent_("local_to_server_uploading"),
-        uiDeleteAllowed: false,
-        uiErrorText: "",
-        rawOutboxError: "",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        retryCount: 0,
-        payload: {
-          formKey: APP.currentFormKey,
-          formNameFa: seededFormNameFa,
-          submissionUid: submissionUid,
-          answers: Array.isArray(answers) ? answers : []
-        }
-      }];
+        status: "processing"
+      });
+
+      __OUTBOX_CURRENT_ITEMS__ = normalizeActiveOutboxRegistryItems_();
     } catch (_) {}
 
     console.log("Queued submission ID:", queuedId);
