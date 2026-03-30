@@ -303,7 +303,7 @@ async function fetchServerQueueItems(){
     const ctl = new AbortController();
     const t = setTimeout(() => {
       try { ctl.abort(); } catch (_) {}
-    }, 2500);
+    }, 8000);
 
     const res = await fetch("/api/queue-item.php", {
       method: "GET",
@@ -335,7 +335,7 @@ async function fetchServerQueueSummary(){
     const ctl = new AbortController();
     const t = setTimeout(() => {
       try { ctl.abort(); } catch (_) {}
-    }, 2500);
+    }, 8000);
 
     const res = await fetch("/api/queue-summary.php", {
       method: "GET",
@@ -1312,6 +1312,13 @@ async function showOutboxDetails(){
   if (renderToken !== __OUTBOX_PANEL_RENDER_TOKEN__) return;
   if (panel.classList.contains("hidden")) return;
 
+  const latestLocal = outboxItemsFromRegistry_();
+
+  if ((!Array.isArray(synced) || !synced.length) && latestLocal.length > 0) {
+    renderOutboxPanelBody_(latestLocal);
+    return;
+  }
+
   if (!Array.isArray(synced) || !synced.length) {
     panel.classList.add("hidden");
     window.__OUTBOX_PANEL_OPEN__ = false;
@@ -1358,6 +1365,16 @@ async function updateOutboxChip(){
   }
 
   const synced = await syncActiveOutboxRegistry_().catch(() => immediate);
+  const latestLocal = outboxItemsFromRegistry_();
+
+  if ((!Array.isArray(synced) || !synced.length) && latestLocal.length > 0) {
+    renderOutboxChipFromItems_(chip, txt, latestLocal);
+
+    if (window.__OUTBOX_PANEL_OPEN__) {
+      renderOutboxPanelBody_(latestLocal);
+    }
+    return;
+  }
 
   if (!Array.isArray(synced) || !synced.length) {
     __OUTBOX_CURRENT_ITEMS__ = [];
