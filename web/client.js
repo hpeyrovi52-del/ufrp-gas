@@ -429,6 +429,8 @@ function upsertActiveOutboxItem_(payload){
     uiPercent: Number(payload?.uiPercent || outboxStagePercent_("local_to_server_uploading")),
     uiDeleteAllowed: !!payload?.uiDeleteAllowed,
     uiErrorText: String(payload?.uiErrorText || "").trim(),
+    uiStatusOverride: String(payload?.uiStatusOverride || "").trim(),
+    rawOutboxError: String(payload?.rawOutboxError || "").trim(),
     status: String(payload?.status || "processing").trim(),
     createdAtMs: Number(payload?.createdAtMs || Date.now()),
     updatedAtMs: Date.now()
@@ -454,7 +456,8 @@ function normalizeActiveOutboxRegistryItems_(){
     uiPercent: Number(x?.uiPercent || outboxStagePercent_("local_to_server_uploading")),
     uiDeleteAllowed: !!x?.uiDeleteAllowed,
     uiErrorText: String(x?.uiErrorText || "").trim(),
-    rawOutboxError: "",
+    uiStatusOverride: String(x?.uiStatusOverride || "").trim(),
+    rawOutboxError: String(x?.rawOutboxError || "").trim(),
     createdAt: new Date(Number(x?.createdAtMs || Date.now())).toISOString(),
     updatedAt: new Date(Number(x?.updatedAtMs || Date.now())).toISOString(),
     retryCount: 0,
@@ -966,6 +969,8 @@ function registryEntryFromOutboxItem_(it){
     uiPercent: Number(it?.uiPercent || outboxStagePercent_("local_to_server_uploading")),
     uiDeleteAllowed: !!it?.uiDeleteAllowed,
     uiErrorText: String(it?.uiErrorText || "").trim(),
+    uiStatusOverride: String(it?.uiStatusOverride || "").trim(),
+    rawOutboxError: String(it?.rawOutboxError || it?.lastError || "").trim(),
     status: String(it?.status || "processing").trim() || "processing",
     createdAtMs: Date.parse(String(it?.createdAt || "")) || Date.now(),
     updatedAtMs: Date.now()
@@ -980,9 +985,10 @@ async function syncActiveOutboxRegistry_(){
     return [];
   }
 
+  const deviceToServerDown = (!navigator.onLine) || !!window.__UFRP_FORCE_OFFLINE__;
+
   let localItems = [];
   let serverItems = [];
-  let serverSummary = { ok: false, total: 0, queued: 0, processing: 0, failed: 0, sent: 0 };
   let serverFetchFailed = false;
 
   try {
@@ -995,19 +1001,11 @@ async function syncActiveOutboxRegistry_(){
   }
 
   try {
-    const [serverItemsRes, serverSummaryRes] = await Promise.all([
-      fetchServerQueueItems(),
-      fetchServerQueueSummary()
-    ]);
-
-    serverFetchFailed = !(serverItemsRes?.ok && serverSummaryRes?.ok);
-
-    if (serverItemsRes?.ok) {
+    const serverItemsRes = await fetchServerQueueItems();
+    if (!serverItemsRes || !serverItemsRes.ok) {
+      serverFetchFailed = true;
+    } else {
       serverItems = normalizeServerOutboxItems_(serverItemsRes.items);
-    }
-
-    if (serverSummaryRes) {
-      serverSummary = serverSummaryRes;
     }
   } catch (e) {
     serverFetchFailed = true;
@@ -1042,44 +1040,25 @@ async function syncActiveOutboxRegistry_(){
   const visible = [];
 
   for (const key of Array.from(allKeys)) {
-    let merged =
-      activeMap.get(key) ||
-      localMap.get(key) ||
-      serverMap.get(key) ||
-      null;
+    const prevActive = activeMap.get(key) || null;
+    const localNow   = localMap.get(key) || null;
+    const serverNow  = serverMap.get(key) || null;
 
+    let merged = prevActive || localNow || serverNow || null;
     if (!merged) continue;
 
-    const hadActive = activeMap.has(key);
-    const hasLocalNow = localMap.has(key);
-    const hasServerNow = serverMap.has(key);
-    const activeStageKey = String((activeMap.get(key)?.uiStageKey) || "").trim();
-    const activeStageRank = outboxStageRank_(activeStageKey);
-
-    // Remove only after a server-stage item disappears from both local+server
-    // AND the server read actually succeeded.
-    if (
-      hadActive &&
-      activeStageRank >= outboxStageRank_("server_to_google_queue") &&
-      !hasLocalNow &&
-      !hasServerNow &&
-      !serverFetchFailed
-    ) {
-      removeActiveOutboxItem_(key);
-      continue;
+    // keep previous local-registry item alive through handoff gaps
+    if (localNow) {
+      merged = mergeOutboxItemOverlay_(merged, localNow);
     }
-
-    if (hasLocalNow) {
-      merged = mergeOutboxItemOverlay_(merged, localMap.get(key));
-    }
-
-    if (hasServerNow) {
-      merged = mergeOutboxItemOverlay_(merged, serverMap.get(key));
+    if (serverNow) {
+      merged = mergeOutboxItemOverlay_(merged, serverNow);
     }
 
     const bucket = String(merged?.serverBucket || "").trim();
     const stageKey = String(merged?.uiStageKey || "").trim();
 
+    // Only explicit terminal server-side signals may clear the item
     if (bucket === "sent" || stageKey === "done") {
       removeActiveOutboxItem_(key);
       continue;
@@ -1087,21 +1066,19 @@ async function syncActiveOutboxRegistry_(){
 
     const item = { ...merged };
     const rawErr = String(item?.rawOutboxError || item?.lastError || "").trim();
+    const prevOverride = String(prevActive?.uiStatusOverride || "").trim();
+    const stageRank = outboxStageRank_(stageKey);
 
-    if (serverFetchFailed) {
-      item.uiStatusOverride = "ارتباط با سرور میانی قطع میباشد";
-    } else if (
-      isRetryableServerOutboxError_(rawErr) &&
-      outboxStageRank_(stageKey) >= outboxStageRank_("server_to_google_queue")
-    ) {
-      item.uiStatusOverride = "ارتباط سرور میانی با اینترنت قطع میباشد";
-    } else if (
-      /failed to fetch|network|offline|timeout|timed out/i.test(rawErr) &&
-      outboxStageRank_(stageKey) < outboxStageRank_("server_to_google_queue")
-    ) {
-      item.uiStatusOverride = "ارتباط با سرور میانی قطع میباشد";
+    if (stageRank < outboxStageRank_("server_to_google_queue")) {
+      item.uiStatusOverride = deviceToServerDown ? "ارتباط با سرور میانی قطع میباشد" : "";
     } else {
-      item.uiStatusOverride = "";
+      if (isRetryableServerOutboxError_(rawErr)) {
+        item.uiStatusOverride = "ارتباط سرور میانی با اینترنت قطع میباشد";
+      } else if (serverNow) {
+        item.uiStatusOverride = "";
+      } else {
+        item.uiStatusOverride = prevOverride;
+      }
     }
 
     visible.push(item);
