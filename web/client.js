@@ -317,10 +317,16 @@ async function fetchServerQueueItems(){
     if (!res || !res.ok) throw new Error("SERVER_QUEUE_ITEMS_HTTP_" + (res ? res.status : 0));
 
     const j = await res.json();
-    return Array.isArray(j?.items) ? j.items : [];
+    return {
+      ok: true,
+      items: Array.isArray(j?.items) ? j.items : []
+    };
   } catch (e) {
     console.warn("Server queue items failed:", e);
-    return [];
+    return {
+      ok: false,
+      items: []
+    };
   }
 }
 
@@ -344,6 +350,7 @@ async function fetchServerQueueSummary(){
 
     const j = await res.json();
     return {
+      ok: true,
       total: Number(j?.total || 0),
       queued: Number(j?.queued || 0),
       processing: Number(j?.processing || 0),
@@ -352,7 +359,14 @@ async function fetchServerQueueSummary(){
     };
   } catch (e) {
     console.warn("Server queue summary failed:", e);
-    return { total: 0, queued: 0, processing: 0, failed: 0, sent: 0 };
+    return {
+      ok: false,
+      total: 0,
+      queued: 0,
+      processing: 0,
+      failed: 0,
+      sent: 0
+    };
   }
 }
 
@@ -968,7 +982,7 @@ async function syncActiveOutboxRegistry_(){
 
   let localItems = [];
   let serverItems = [];
-  let serverSummary = { total: 0, queued: 0, processing: 0, failed: 0, sent: 0 };
+  let serverSummary = { ok: false, total: 0, queued: 0, processing: 0, failed: 0, sent: 0 };
   let serverFetchFailed = false;
 
   try {
@@ -981,12 +995,20 @@ async function syncActiveOutboxRegistry_(){
   }
 
   try {
-    const [rawServerItems, rawServerSummary] = await Promise.all([
+    const [serverItemsRes, serverSummaryRes] = await Promise.all([
       fetchServerQueueItems(),
       fetchServerQueueSummary()
     ]);
-    serverItems = normalizeServerOutboxItems_(rawServerItems);
-    serverSummary = rawServerSummary || serverSummary;
+
+    serverFetchFailed = !(serverItemsRes?.ok && serverSummaryRes?.ok);
+
+    if (serverItemsRes?.ok) {
+      serverItems = normalizeServerOutboxItems_(serverItemsRes.items);
+    }
+
+    if (serverSummaryRes) {
+      serverSummary = serverSummaryRes;
+    }
   } catch (e) {
     serverFetchFailed = true;
     console.warn("Server outbox sync failed:", e);
@@ -1031,20 +1053,17 @@ async function syncActiveOutboxRegistry_(){
     const hadActive = activeMap.has(key);
     const hasLocalNow = localMap.has(key);
     const hasServerNow = serverMap.has(key);
-
     const activeStageKey = String((activeMap.get(key)?.uiStageKey) || "").trim();
     const activeStageRank = outboxStageRank_(activeStageKey);
 
-    // If an item had already reached a server-side stage in the local registry,
-    // and now it is absent from both local + server active queues, and the
-    // server read succeeded, then treat it as completed.
+    // Remove only after a server-stage item disappears from both local+server
+    // AND the server read actually succeeded.
     if (
       hadActive &&
       activeStageRank >= outboxStageRank_("server_to_google_queue") &&
       !hasLocalNow &&
       !hasServerNow &&
-      !serverFetchFailed &&
-      (Number(serverSummary?.sent || 0) > 0 || Number(serverSummary?.total || 0) === 0)
+      !serverFetchFailed
     ) {
       removeActiveOutboxItem_(key);
       continue;
