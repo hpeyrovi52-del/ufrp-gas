@@ -432,6 +432,8 @@ function upsertActiveOutboxItem_(payload){
     uiStatusOverride: String(payload?.uiStatusOverride || "").trim(),
     rawOutboxError: String(payload?.rawOutboxError || "").trim(),
     status: String(payload?.status || "processing").trim(),
+    hasReachedServerStage: !!payload?.hasReachedServerStage,
+    missingAfterServerPolls: Number(payload?.missingAfterServerPolls || 0),
     createdAtMs: Number(payload?.createdAtMs || Date.now()),
     updatedAtMs: Date.now()
   });
@@ -458,6 +460,8 @@ function normalizeActiveOutboxRegistryItems_(){
     uiErrorText: String(x?.uiErrorText || "").trim(),
     uiStatusOverride: String(x?.uiStatusOverride || "").trim(),
     rawOutboxError: String(x?.rawOutboxError || "").trim(),
+    hasReachedServerStage: !!x?.hasReachedServerStage,
+    missingAfterServerPolls: Number(x?.missingAfterServerPolls || 0),
     createdAt: new Date(Number(x?.createdAtMs || Date.now())).toISOString(),
     updatedAt: new Date(Number(x?.updatedAtMs || Date.now())).toISOString(),
     retryCount: 0,
@@ -972,6 +976,8 @@ function registryEntryFromOutboxItem_(it){
     uiStatusOverride: String(it?.uiStatusOverride || "").trim(),
     rawOutboxError: String(it?.rawOutboxError || it?.lastError || "").trim(),
     status: String(it?.status || "processing").trim() || "processing",
+    hasReachedServerStage: !!it?.hasReachedServerStage,
+    missingAfterServerPolls: Number(it?.missingAfterServerPolls || 0),
     createdAtMs: Date.parse(String(it?.createdAt || "")) || Date.now(),
     updatedAtMs: Date.now()
   };
@@ -1064,28 +1070,35 @@ async function syncActiveOutboxRegistry_(){
     const stageKey = String(merged?.uiStageKey || "").trim();
     const stageRank = outboxStageRank_(stageKey);
 
-    // Explicit terminal signal
     if (bucket === "sent" || stageKey === "done") {
       removeActiveOutboxItem_(key);
       continue;
     }
 
-    // Safe inferred terminal signal:
-    // only after item had already reached server-side stage,
-    // local copy is gone,
-    // server polling succeeded,
-    // and this submission is no longer present in active server buckets.
+    const item = { ...merged };
+    item.hasReachedServerStage =
+      !!(prevActive?.hasReachedServerStage) ||
+      stageRank >= outboxStageRank_("server_to_google_queue");
+
     if (
-      stageRank >= outboxStageRank_("server_to_google_queue") &&
+      item.hasReachedServerStage &&
       !localNow &&
       !serverNow &&
       !serverFetchFailed
     ) {
-      removeActiveOutboxItem_(key);
+      item.missingAfterServerPolls = Number(prevActive?.missingAfterServerPolls || 0) + 1;
+
+      if (item.missingAfterServerPolls >= 2) {
+        removeActiveOutboxItem_(key);
+        continue;
+      }
+
+      visible.push(item);
       continue;
+    } else {
+      item.missingAfterServerPolls = 0;
     }
 
-    const item = { ...merged };
     const rawErr = String(item?.rawOutboxError || item?.lastError || "").trim();
     const prevOverride = String(prevActive?.uiStatusOverride || "").trim();
 
