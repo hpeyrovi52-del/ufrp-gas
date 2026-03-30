@@ -989,6 +989,7 @@ async function syncActiveOutboxRegistry_(){
 
   let localItems = [];
   let serverItems = [];
+  let serverSummary = { ok: false, total: 0, queued: 0, processing: 0, failed: 0, sent: 0 };
   let serverFetchFailed = false;
 
   try {
@@ -1001,11 +1002,16 @@ async function syncActiveOutboxRegistry_(){
   }
 
   try {
-    const serverItemsRes = await fetchServerQueueItems();
-    if (!serverItemsRes || !serverItemsRes.ok) {
+    const [serverItemsRes, serverSummaryRes] = await Promise.all([
+      fetchServerQueueItems(),
+      fetchServerQueueSummary()
+    ]);
+
+    if (!serverItemsRes || !serverItemsRes.ok || !serverSummaryRes || !serverSummaryRes.ok) {
       serverFetchFailed = true;
     } else {
       serverItems = normalizeServerOutboxItems_(serverItemsRes.items);
+      serverSummary = serverSummaryRes;
     }
   } catch (e) {
     serverFetchFailed = true;
@@ -1047,7 +1053,6 @@ async function syncActiveOutboxRegistry_(){
     let merged = prevActive || localNow || serverNow || null;
     if (!merged) continue;
 
-    // keep previous local-registry item alive through handoff gaps
     if (localNow) {
       merged = mergeOutboxItemOverlay_(merged, localNow);
     }
@@ -1057,9 +1062,25 @@ async function syncActiveOutboxRegistry_(){
 
     const bucket = String(merged?.serverBucket || "").trim();
     const stageKey = String(merged?.uiStageKey || "").trim();
+    const stageRank = outboxStageRank_(stageKey);
 
-    // Only explicit terminal server-side signals may clear the item
+    // Explicit terminal signal
     if (bucket === "sent" || stageKey === "done") {
+      removeActiveOutboxItem_(key);
+      continue;
+    }
+
+    // Safe inferred terminal signal:
+    // only after item had already reached server-side stage,
+    // local copy is gone,
+    // server polling succeeded,
+    // and this submission is no longer present in active server buckets.
+    if (
+      stageRank >= outboxStageRank_("server_to_google_queue") &&
+      !localNow &&
+      !serverNow &&
+      !serverFetchFailed
+    ) {
       removeActiveOutboxItem_(key);
       continue;
     }
@@ -1067,7 +1088,6 @@ async function syncActiveOutboxRegistry_(){
     const item = { ...merged };
     const rawErr = String(item?.rawOutboxError || item?.lastError || "").trim();
     const prevOverride = String(prevActive?.uiStatusOverride || "").trim();
-    const stageRank = outboxStageRank_(stageKey);
 
     if (stageRank < outboxStageRank_("server_to_google_queue")) {
       item.uiStatusOverride = deviceToServerDown ? "ارتباط با سرور میانی قطع میباشد" : "";
