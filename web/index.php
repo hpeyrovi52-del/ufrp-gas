@@ -179,6 +179,8 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
         direction: ltr;
+        box-sizing: border-box;
+        padding-bottom: max(18px, env(safe-area-inset-bottom));
       }
 
       #scrollArea > *{ direction: rtl; }
@@ -636,6 +638,7 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
          ===================================================== */
       .actions{
         margin-top: 12px;
+        margin-bottom: max(16px, env(safe-area-inset-bottom));
         display:flex;
         gap: 10px;
         flex-wrap: wrap;
@@ -841,9 +844,10 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
         line-height: 1.9;
         font-weight: 900;
         width: min(88vw, 420px);
-        background: rgba(153,27,27,0.96);
-        color: #ffffff;
-        box-shadow: 0 18px 46px rgba(17,24,39,0.26);
+        background: rgba(255,245,245,0.98);
+        color: rgba(239,68,68,0.95);
+        border: 1px solid rgba(239,68,68,0.18);
+        box-shadow: 0 18px 46px rgba(17,24,39,0.18);
       }
 
       .toast.validation.show{

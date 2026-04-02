@@ -3480,8 +3480,24 @@ function focusMissingField_(miss){
     document.getElementById(fieldId + "__value")?.closest(".field");
 
   try {
-    if (row && typeof row.scrollIntoView === "function") {
-      row.scrollIntoView({ behavior: "smooth", block: "center" });
+    const scrollArea = document.getElementById("scrollArea");
+    if (row && scrollArea) {
+      const rowRect = row.getBoundingClientRect();
+      const scrollRect = scrollArea.getBoundingClientRect();
+      const fixedHeader = document.getElementById("fixedHeaderArea");
+      const headerOffset = Math.max(18, Math.min(42, Number(fixedHeader?.offsetHeight || 0) * 0.2));
+
+      const targetTop =
+        scrollArea.scrollTop +
+        (rowRect.top - scrollRect.top) -
+        headerOffset;
+
+      scrollArea.scrollTo({
+        top: Math.max(0, targetTop),
+        behavior: "smooth"
+      });
+    } else if (row && typeof row.scrollIntoView === "function") {
+      row.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
   } catch (_) {}
 
