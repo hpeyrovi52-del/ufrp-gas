@@ -3608,27 +3608,30 @@ function focusNextQuestionField_(currentFieldId){
           targetTop += projectedRowBottom - desiredBottomEdge;
         }
       } else if (textEntryField) {
-        const preferredTopOffset = baseHeaderOffset + 110;
-        const preferredTopEdge = scrollRect.top + preferredTopOffset;
+        const visibleTop = scrollRect.top + baseHeaderOffset + 18;
+        const visibleBottom = effectiveBottom - 18;
+        const visibleHeight = Math.max(120, visibleBottom - visibleTop);
 
-        const idealTargetTop =
+        const desiredCenterY = visibleTop + (visibleHeight * 0.42);
+        const rowCenterY = rowRect.top + (rowRect.height / 2);
+
+        targetTop =
           scrollArea.scrollTop +
-          (rowRect.top - scrollRect.top) -
-          preferredTopOffset;
+          (rowCenterY - desiredCenterY);
 
         const maxScrollableTop = Math.max(0, scrollArea.scrollHeight - scrollArea.clientHeight);
-        const clampedIdealTop = Math.max(0, Math.min(maxScrollableTop, idealTargetTop));
-
-        targetTop = clampedIdealTop;
+        targetTop = Math.max(0, Math.min(maxScrollableTop, targetTop));
 
         const projectedRowTop = rowRect.top - (targetTop - scrollArea.scrollTop);
         const projectedRowBottom = rowRect.bottom - (targetTop - scrollArea.scrollTop);
-        const desiredBottomEdge = effectiveBottom - 80;
 
-        if (projectedRowTop < preferredTopEdge) {
-          targetTop += projectedRowTop - preferredTopEdge;
-        } else if (projectedRowBottom > desiredBottomEdge) {
-          targetTop += projectedRowBottom - desiredBottomEdge;
+        const minTopEdge = visibleTop;
+        const maxBottomEdge = visibleBottom;
+
+        if (projectedRowTop < minTopEdge) {
+          targetTop += projectedRowTop - minTopEdge;
+        } else if (projectedRowBottom > maxBottomEdge) {
+          targetTop += projectedRowBottom - maxBottomEdge;
         }
       } else {
         const desiredTopEdge = scrollRect.top + baseHeaderOffset;
