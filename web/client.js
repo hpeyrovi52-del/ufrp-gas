@@ -2360,8 +2360,8 @@ function bindPickerDom(){
     monthSelect.appendChild(opt);
   }
 
-  if (prevBtn) prevBtn.addEventListener("click", () => shiftMonth(+1));
-  if (nextBtn) nextBtn.addEventListener("click", () => shiftMonth(-1));
+  if (prevBtn) prevBtn.addEventListener("click", () => shiftMonth(-1));
+  if (nextBtn) nextBtn.addEventListener("click", () => shiftMonth(+1));
 
   yearSelect.addEventListener("change", () => { viewJy = Number(yearSelect.value); renderPicker(); });
   monthSelect.addEventListener("change", () => { viewJm = Number(monthSelect.value); renderPicker(); });
