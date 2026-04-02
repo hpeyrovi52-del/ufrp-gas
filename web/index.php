@@ -1032,45 +1032,69 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
       }
 
       .pullRefreshHint{
-        position:sticky;
-        top:0;
-        z-index:5;
-        margin:0 auto 8px;
-        width:48px;
-        height:48px;
-        border-radius:999px;
-        border:1px solid rgba(30,91,215,0.14);
-        background: rgba(255,255,255,0.90);
-        color: rgba(30,91,215,0.92);
-        box-shadow: 0 10px 24px rgba(17,24,39,0.08);
-        display:none;
-        align-items:center;
-        justify-content:center;
-        opacity:.72;
-        transform: translateY(0) scale(.96);
-        transition: opacity 120ms ease, transform 120ms ease, border-color 120ms ease, background 120ms ease;
+        position: sticky;
+        top: 8px;
+        left: 50%;
+        right: auto;
+        z-index: 5;
+        margin: 0 0 10px;
+        width: 54px;
+        height: 54px;
+        border-radius: 999px;
+        border: 1px solid rgba(30,91,215,0.14);
+        background: rgba(255,255,255,0.92);
+        color: rgba(30,91,215,0.94);
+        box-shadow: 0 12px 28px rgba(17,24,39,0.10);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        opacity: .78;
+        transform: translateX(-50%) translateY(-6px) scale(.92);
+        transition: opacity 140ms ease, transform 140ms ease, border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+        pointer-events: none;
       }
 
       .pullRefreshHint.show{
-        display:inline-flex;
+        display: inline-flex;
+        animation: pullHintFloat 1.05s ease-in-out infinite;
       }
 
       .pullRefreshHint.ready{
-        opacity:1;
-        transform: translateY(0) scale(1.02);
-        border-color: rgba(30,91,215,0.24);
-        background: rgba(255,255,255,0.98);
+        opacity: 1;
+        transform: translateX(-50%) translateY(0) scale(1.04);
+        border-color: rgba(30,91,215,0.26);
+        background: rgba(255,255,255,0.99);
+        box-shadow: 0 14px 34px rgba(30,91,215,0.14);
+        animation: pullHintReady 0.75s ease-in-out infinite;
       }
 
       .pullRefreshHint svg{
-        width:22px;
-        height:22px;
+        width: 24px;
+        height: 24px;
         stroke: currentColor;
-        fill:none;
-        stroke-width:2;
-        stroke-linecap:round;
-        stroke-linejoin:round;
-        opacity:.92;
+        fill: none;
+        stroke-width: 2.2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        opacity: .96;
+      }
+
+      @keyframes pullHintFloat{
+        0%, 100%{
+          transform: translateX(-50%) translateY(-6px) scale(.92);
+        }
+        50%{
+          transform: translateX(-50%) translateY(0) scale(.98);
+        }
+      }
+
+      @keyframes pullHintReady{
+        0%, 100%{
+          transform: translateX(-50%) translateY(0) scale(1.04);
+        }
+        50%{
+          transform: translateX(-50%) translateY(3px) scale(1.08);
+        }
       }
 
       .refreshModalCard{
@@ -1164,8 +1188,8 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
           <div id="scrollArea">
             <div id="pullRefreshHint" class="pullRefreshHint" aria-hidden="true">
               <svg viewBox="0 0 24 24">
-                <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
-                <path d="M21 3v6h-6"></path>
+                <path d="M12 5v10"></path>
+                <path d="M7 11l5 5 5-5"></path>
               </svg>
             </div>
 
