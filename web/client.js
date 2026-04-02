@@ -3583,7 +3583,13 @@ function focusNextQuestionField_(currentFieldId){
 
     setTimeout(() => {
       try {
-        target.focus();
+        if (typeof target.focus === "function") {
+          try {
+            target.focus({ preventScroll: true });
+          } catch (_) {
+            target.focus();
+          }
+        }
       } catch (_) {}
     }, 260);
 
@@ -3629,7 +3635,9 @@ function focusMissingField_(miss){
 
       if (type === "FILE_UPLOAD") {
         const btn = document.getElementById(fieldId + "__btn");
-        if (btn && typeof btn.focus === "function") btn.focus();
+        if (btn && typeof btn.focus === "function") {
+          try { btn.focus({ preventScroll: true }); } catch (_) { btn.focus(); }
+        }
         return;
       }
 
@@ -3637,11 +3645,11 @@ function focusMissingField_(miss){
         const other = document.getElementById(fieldId + "__other");
         const firstRadio = document.querySelector(`input[name="${fieldId}__radio"]`);
         if (firstRadio && typeof firstRadio.focus === "function") {
-          firstRadio.focus();
+          try { firstRadio.focus({ preventScroll: true }); } catch (_) { firstRadio.focus(); }
           return;
         }
         if (other && typeof other.focus === "function") {
-          other.focus();
+          try { other.focus({ preventScroll: true }); } catch (_) { other.focus(); }
           return;
         }
       }
@@ -3650,14 +3658,14 @@ function focusMissingField_(miss){
         const host = document.getElementById(fieldId);
         const input = host ? host.querySelector(".sdInput") : null;
         if (input && typeof input.focus === "function") {
-          input.focus();
+          try { input.focus({ preventScroll: true }); } catch (_) { input.focus(); }
           return;
         }
       }
 
       const el = document.getElementById(fieldId);
       if (el && typeof el.focus === "function") {
-        el.focus();
+        try { el.focus({ preventScroll: true }); } catch (_) { el.focus(); }
         return;
       }
     } catch (_) {}
