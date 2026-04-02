@@ -3445,6 +3445,7 @@ function showToast_(msg){
   if (!t) return;
 
   t.textContent = msg || "✅ انجام شد";
+  t.classList.remove("validation");
   t.style.background = "";
   t.style.color = "";
   t.classList.add("show");
@@ -3456,15 +3457,16 @@ function showValidationToast_(msg){
   if (!t) return;
 
   t.textContent = msg || "فیلد الزامی تکمیل نشده است";
-  t.style.background = "rgba(153,27,27,0.94)";
-  t.style.color = "#ffffff";
-  t.classList.add("show");
+  t.style.background = "";
+  t.style.color = "";
+  t.classList.add("validation", "show");
 
   setTimeout(() => {
     t.classList.remove("show");
-    t.style.background = "";
-    t.style.color = "";
-  }, 2200);
+    setTimeout(() => {
+      t.classList.remove("validation");
+    }, 160);
+  }, 3600);
 }
 
 function focusMissingField_(miss){

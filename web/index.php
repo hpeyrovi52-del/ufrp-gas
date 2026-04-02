@@ -820,13 +820,34 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
         box-shadow: 0 12px 30px rgba(0,0,0,0.20);
         opacity: 0;
         pointer-events: none;
-        transition: opacity 120ms ease, transform 120ms ease;
+        transition: opacity 140ms ease, transform 140ms ease;
         z-index: 9999;
+        max-width: min(88vw, 520px);
+        text-align: center;
       }
 
       .toast.show{
         opacity: 1;
         transform: translateX(-50%) translateY(-2px);
+      }
+
+      .toast.validation{
+        top: 50%;
+        bottom: auto;
+        transform: translate(-50%, -50%) scale(.96);
+        border-radius: 18px;
+        padding: 16px 18px;
+        font-size: 15px;
+        line-height: 1.9;
+        font-weight: 900;
+        width: min(88vw, 420px);
+        background: rgba(153,27,27,0.96);
+        color: #ffffff;
+        box-shadow: 0 18px 46px rgba(17,24,39,0.26);
+      }
+
+      .toast.validation.show{
+        transform: translate(-50%, -50%) scale(1);
       }
 
       /* =====================================================
