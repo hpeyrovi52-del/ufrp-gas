@@ -4186,7 +4186,11 @@ async function appInit(){
             }
 
             try {
-              const bundleRes = await gsCall("app_getFormBundleForCurrentUser", k);
+              const bundleRes = await fetch("/api/form-bundle.php?formKey=" + encodeURIComponent(k), {
+                method: "GET",
+                credentials: "include",
+                cache: "no-store"
+              }).then(r => r.json());
 
               if (bundleRes && bundleRes.ok) {
                 localStorage.setItem(
@@ -4206,7 +4210,11 @@ async function appInit(){
                 }
 
                 try {
-                  const optRes = await gsCall("app_getFormOptionsForCurrentUser", k);
+                  const optRes = await fetch("/api/form-options.php?formKey=" + encodeURIComponent(k), {
+                    method: "GET",
+                    credentials: "include",
+                    cache: "no-store"
+                  }).then(r => r.json());
 
                   if (optRes && optRes.ok && window.__OFFLINE__ && typeof window.__OFFLINE__.cachePut === "function") {
                     await window.__OFFLINE__.cachePut("options:" + k, "options", optRes);
