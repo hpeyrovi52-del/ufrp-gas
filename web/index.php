@@ -1108,28 +1108,13 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
                 </div>
               </div>
 
-              <div class="topLeftActions">
-                <button
-                  id="refreshAppBtn"
-                  class="iconBtn"
-                  type="button"
-                  title="بروزرسانی برنامه"
-                  aria-label="بروزرسانی برنامه"
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
-                    <path d="M21 3v6h-6"></path>
-                  </svg>
-                </button>
-
-                <button class="backBtn"
-                        id="backBtn"
-                        type="button"
-                        onclick="backToMenu()"
-                        style="display:none;">
-                  بازگشت
-                </button>
-              </div>
+              <button class="backBtn"
+                      id="backBtn"
+                      type="button"
+                      onclick="backToMenu()"
+                      style="display:none;">
+                بازگشت
+              </button>
             </div>
 
             <!-- STATUS LINE -->
