@@ -1036,23 +1036,41 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
         top:0;
         z-index:5;
         margin:0 auto 8px;
-        width:max-content;
-        max-width:90%;
-        padding:6px 12px;
+        width:48px;
+        height:48px;
         border-radius:999px;
-        border:1px solid rgba(30,91,215,0.16);
-        background: rgba(255,255,255,0.92);
-        color: rgba(30,91,215,0.95);
-        font-size:12px;
-        font-weight:900;
+        border:1px solid rgba(30,91,215,0.14);
+        background: rgba(255,255,255,0.90);
+        color: rgba(30,91,215,0.92);
         box-shadow: 0 10px 24px rgba(17,24,39,0.08);
         display:none;
+        align-items:center;
+        justify-content:center;
+        opacity:.72;
+        transform: translateY(0) scale(.96);
+        transition: opacity 120ms ease, transform 120ms ease, border-color 120ms ease, background 120ms ease;
       }
 
       .pullRefreshHint.show{
         display:inline-flex;
-        align-items:center;
-        gap:8px;
+      }
+
+      .pullRefreshHint.ready{
+        opacity:1;
+        transform: translateY(0) scale(1.02);
+        border-color: rgba(30,91,215,0.24);
+        background: rgba(255,255,255,0.98);
+      }
+
+      .pullRefreshHint svg{
+        width:22px;
+        height:22px;
+        stroke: currentColor;
+        fill:none;
+        stroke-width:2;
+        stroke-linecap:round;
+        stroke-linejoin:round;
+        opacity:.92;
       }
 
       .refreshModalCard{
@@ -1144,7 +1162,12 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
                SCROLLABLE APP CONTENT
                ================================================= -->
           <div id="scrollArea">
-            <div id="pullRefreshHint" class="pullRefreshHint">بروزرسانی برنامه</div>
+            <div id="pullRefreshHint" class="pullRefreshHint" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
+                <path d="M21 3v6h-6"></path>
+              </svg>
+            </div>
 
             <div id="menuView">
               <div id="menuContainer"></div>

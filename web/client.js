@@ -3499,17 +3499,26 @@ function refreshAppNow_(){
   }, 150);
 }
 
+function setPullRefreshHintState_(state){
+  const hint = document.getElementById("pullRefreshHint");
+  if (!hint) return;
+
+  hint.classList.remove("show", "ready");
+
+  if (state === "show") {
+    hint.classList.add("show");
+  } else if (state === "ready") {
+    hint.classList.add("show", "ready");
+  }
+}
+
 function resetPullRefreshState_(){
   __PULL_REFRESH_ARMED__ = false;
   __PULL_REFRESH_START_Y__ = 0;
   __PULL_REFRESH_LAST_DELTA__ = 0;
   __PULL_REFRESH_TRACKING__ = false;
 
-  const hint = document.getElementById("pullRefreshHint");
-  if (hint) {
-    hint.classList.remove("show");
-    hint.textContent = "بروزرسانی برنامه";
-  }
+  setPullRefreshHintState_("");
 }
 
 function bindAppRefreshUI_(){
@@ -3589,18 +3598,12 @@ function bindAppRefreshUI_(){
 
     if (delta >= 90) {
       __PULL_REFRESH_ARMED__ = true;
-      if (hint) {
-        hint.textContent = "برای بروزرسانی رها کنید";
-        hint.classList.add("show");
-      }
+      setPullRefreshHintState_("ready");
     } else if (delta >= 35) {
       __PULL_REFRESH_ARMED__ = false;
-      if (hint) {
-        hint.textContent = "برای بروزرسانی برنامه بکشید";
-        hint.classList.add("show");
-      }
-    } else if (hint) {
-      hint.classList.remove("show");
+      setPullRefreshHintState_("show");
+    } else {
+      setPullRefreshHintState_("");
     }
   }, { passive: true });
 
