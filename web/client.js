@@ -3555,31 +3555,40 @@ function focusNextQuestionField_(currentFieldId){
     );
   };
 
+  const scrollFieldIntoViewWithinApp_ = (fieldEl) => {
+    if (!fieldEl || !scrollArea) return;
+
+    try {
+      const rowRect = fieldEl.getBoundingClientRect();
+      const scrollRect = scrollArea.getBoundingClientRect();
+      const fixedHeader = document.getElementById("fixedHeaderArea");
+      const headerOffset = Math.max(18, Math.min(42, Number(fixedHeader?.offsetHeight || 0) * 0.2));
+
+      const viewportHeight = Number(window.visualViewport?.height || window.innerHeight || 0);
+      const keyboardInset = Math.max(0, Number(window.innerHeight || 0) - viewportHeight);
+      const effectiveBottom = Math.min(scrollRect.bottom, viewportHeight || scrollRect.bottom) - Math.max(18, keyboardInset + 10);
+
+      let targetTop = scrollArea.scrollTop;
+
+      if (rowRect.top < (scrollRect.top + headerOffset)) {
+        targetTop += rowRect.top - (scrollRect.top + headerOffset);
+      } else if (rowRect.bottom > effectiveBottom) {
+        targetTop += rowRect.bottom - effectiveBottom;
+      }
+
+      scrollArea.scrollTo({
+        top: Math.max(0, targetTop),
+        behavior: "smooth"
+      });
+    } catch (_) {}
+  };
+
   for (let i = idx + 1; i < fieldRows.length; i++) {
     const nextField = fieldRows[i];
     const target = getFocusableForField(nextField);
     if (!target) continue;
 
-    try {
-      if (scrollArea) {
-        const rowRect = nextField.getBoundingClientRect();
-        const scrollRect = scrollArea.getBoundingClientRect();
-        const fixedHeader = document.getElementById("fixedHeaderArea");
-        const headerOffset = Math.max(18, Math.min(42, Number(fixedHeader?.offsetHeight || 0) * 0.2));
-
-        const targetTop =
-          scrollArea.scrollTop +
-          (rowRect.top - scrollRect.top) -
-          headerOffset;
-
-        scrollArea.scrollTo({
-          top: Math.max(0, targetTop),
-          behavior: "smooth"
-        });
-      } else if (typeof nextField.scrollIntoView === "function") {
-        nextField.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      }
-    } catch (_) {}
+    scrollFieldIntoViewWithinApp_(nextField);
 
     setTimeout(() => {
       try {
@@ -3591,6 +3600,9 @@ function focusNextQuestionField_(currentFieldId){
           }
         }
       } catch (_) {}
+
+      setTimeout(() => scrollFieldIntoViewWithinApp_(nextField), 120);
+      setTimeout(() => scrollFieldIntoViewWithinApp_(nextField), 420);
     }, 260);
 
     break;
