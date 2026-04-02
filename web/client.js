@@ -1795,7 +1795,11 @@ function createSearchDropdown(mountEl, cfg){
   input.className = "control sdInput";
   input.type = "text";
   input.autocomplete = "off";
-  input.placeholder = cfg.placeholder || "جستجو یا انتخاب...";
+
+  const allowAdd = !!cfg.allowAdd;
+  input.placeholder = allowAdd
+    ? (cfg.placeholder || "جستجو یا انتخاب...")
+    : "انتخاب...";
 
   const caret = document.createElement("div");
   caret.className = "sdCaret";
@@ -1821,9 +1825,27 @@ function createSearchDropdown(mountEl, cfg){
   let activeIndex = -1;
   let selectedValue = "";
   let searchQuery = "";
-  const allowAdd = !!cfg.allowAdd;
+  let typingEnabled = false;
+  let openedAtMs = 0;
 
   function normalize(s){ return String(s ?? "").trim(); }
+
+  function setTypingEnabled(enabled){
+    if (!allowAdd) {
+      typingEnabled = false;
+      input.readOnly = true;
+      input.inputMode = "none";
+      input.style.cursor = "pointer";
+      return;
+    }
+
+    typingEnabled = !!enabled;
+    input.readOnly = !typingEnabled;
+    input.inputMode = typingEnabled ? "search" : "none";
+    input.style.cursor = typingEnabled ? "text" : "pointer";
+  }
+
+  setTypingEnabled(false);
   function normLower(s){ return normalize(s).toLowerCase(); }
 
   function optionExists(val){
@@ -1856,6 +1878,8 @@ function createSearchDropdown(mountEl, cfg){
     activeIndex = -1;
     actionNodes = [];
     input.value = selectedValue || "";
+    searchQuery = "";
+    setTypingEnabled(false);
   }
 
   function pickValue(v){
@@ -1983,10 +2007,27 @@ function createSearchDropdown(mountEl, cfg){
       menu.classList.add("show");
       isOpen = true;
     }
+    openedAtMs = Date.now();
+    setTypingEnabled(false);
     render();
   }
 
   input.addEventListener("focus", () => open(true));
+
+  input.addEventListener("click", () => {
+    if (!allowAdd) return;
+    if (!isOpen) return;
+    if ((Date.now() - openedAtMs) < 250) return;
+    if (typingEnabled) return;
+
+    setTypingEnabled(true);
+    searchQuery = "";
+    input.value = "";
+
+    setTimeout(() => {
+      try { input.focus(); } catch (_) {}
+    }, 0);
+  });
 
   input.addEventListener("input", () => {
     searchQuery = input.value;
