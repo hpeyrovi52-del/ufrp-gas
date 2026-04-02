@@ -994,6 +994,84 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
         color:rgba(17,24,39,0.85);
         scrollbar-width:thin;
       }
+
+      /* =====================================================
+         APP REFRESH UI
+         ===================================================== */
+      .iconBtn{
+        width:42px;
+        height:42px;
+        border-radius:14px;
+        border:1px solid rgba(17,24,39,0.10);
+        background: rgba(255,255,255,0.60);
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        cursor:pointer;
+        user-select:none;
+        flex:0 0 auto;
+      }
+
+      .iconBtn:active{ transform: translateY(1px); }
+
+      .iconBtn svg{
+        width:20px;
+        height:20px;
+        stroke: rgba(17,24,39,0.72);
+        fill:none;
+        stroke-width:2;
+        stroke-linecap:round;
+        stroke-linejoin:round;
+      }
+
+      .topLeftActions{
+        display:flex;
+        align-items:center;
+        gap:8px;
+        flex:0 0 auto;
+      }
+
+      .pullRefreshHint{
+        position:sticky;
+        top:0;
+        z-index:5;
+        margin:0 auto 8px;
+        width:max-content;
+        max-width:90%;
+        padding:6px 12px;
+        border-radius:999px;
+        border:1px solid rgba(30,91,215,0.16);
+        background: rgba(255,255,255,0.92);
+        color: rgba(30,91,215,0.95);
+        font-size:12px;
+        font-weight:900;
+        box-shadow: 0 10px 24px rgba(17,24,39,0.08);
+        display:none;
+      }
+
+      .pullRefreshHint.show{
+        display:inline-flex;
+        align-items:center;
+        gap:8px;
+      }
+
+      .refreshModalCard{
+        width:min(460px, 94vw);
+        background: var(--card);
+        border: 1px solid var(--card-border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: var(--pad);
+        direction: rtl;
+      }
+
+      .refreshModalActions{
+        margin-top: 14px;
+        display:flex;
+        gap:10px;
+        flex-wrap:wrap;
+        justify-content:center;
+      }
     </style>
   </head>
 
@@ -1030,13 +1108,28 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
                 </div>
               </div>
 
-              <button class="backBtn"
-                      id="backBtn"
-                      type="button"
-                      onclick="backToMenu()"
-                      style="display:none;">
-                بازگشت
-              </button>
+              <div class="topLeftActions">
+                <button
+                  id="refreshAppBtn"
+                  class="iconBtn"
+                  type="button"
+                  title="بروزرسانی برنامه"
+                  aria-label="بروزرسانی برنامه"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
+                    <path d="M21 3v6h-6"></path>
+                  </svg>
+                </button>
+
+                <button class="backBtn"
+                        id="backBtn"
+                        type="button"
+                        onclick="backToMenu()"
+                        style="display:none;">
+                  بازگشت
+                </button>
+              </div>
             </div>
 
             <!-- STATUS LINE -->
@@ -1066,6 +1159,8 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
                SCROLLABLE APP CONTENT
                ================================================= -->
           <div id="scrollArea">
+            <div id="pullRefreshHint" class="pullRefreshHint">بروزرسانی برنامه</div>
+
             <div id="menuView">
               <div id="menuContainer"></div>
             </div>
@@ -1089,6 +1184,23 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
       </div>
 
       <div id="outboxPanelBody" class="outboxPanelBody"></div>
+    </div>
+
+    <div id="appRefreshModal" class="modalBackdrop" aria-hidden="true">
+      <div class="refreshModalCard" role="dialog" aria-modal="true" aria-labelledby="appRefreshModalTitle">
+        <div style="text-align:center; font-weight:900; font-size: clamp(16px,2.2vh,20px);" id="appRefreshModalTitle">
+          بروزرسانی برنامه
+        </div>
+
+        <p style="margin:10px 0 0; text-align:center; color: var(--muted); font-size:13px; line-height:1.8;">
+          آیا می‌خواهید کل برنامه بروزرسانی شود؟
+        </p>
+
+        <div class="refreshModalActions">
+          <button class="btn btnPrimary" type="button" id="appRefreshConfirmBtn">بله، بروزرسانی شود</button>
+          <button class="btn" type="button" id="appRefreshCancelBtn">انصراف</button>
+        </div>
+      </div>
     </div>
 
     <!-- =====================================================

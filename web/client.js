@@ -3441,6 +3441,184 @@ function showToast_(msg){
   setTimeout(() => t.classList.remove("show"), 1500);
 }
 
+let __APP_REFRESH_MODAL_OPEN__ = false;
+let __PULL_REFRESH_ARMED__ = false;
+let __PULL_REFRESH_START_Y__ = 0;
+let __PULL_REFRESH_LAST_DELTA__ = 0;
+let __PULL_REFRESH_TRACKING__ = false;
+
+function canStartPullRefreshFromTarget_(target){
+  const el = target instanceof Element ? target : null;
+  if (!el) return true;
+
+  if (
+    el.closest(".outboxPanel") ||
+    el.closest(".modalBackdrop.show") ||
+    el.closest("input") ||
+    el.closest("textarea") ||
+    el.closest("select") ||
+    el.closest(".sdMenu") ||
+    el.closest(".sdWrap") ||
+    el.closest(".fuWrap") ||
+    el.closest("button")
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function showAppRefreshModal_(){
+  const modal = document.getElementById("appRefreshModal");
+  if (!modal) return;
+
+  __APP_REFRESH_MODAL_OPEN__ = true;
+  modal.classList.add("show");
+  modal.setAttribute("aria-hidden", "false");
+}
+
+function hideAppRefreshModal_(){
+  const modal = document.getElementById("appRefreshModal");
+  if (!modal) return;
+
+  __APP_REFRESH_MODAL_OPEN__ = false;
+  modal.classList.remove("show");
+  modal.setAttribute("aria-hidden", "true");
+}
+
+function refreshAppNow_(){
+  try { hideAppRefreshModal_(); } catch (_) {}
+  try { setStatus("در حال بروزرسانی...", true); } catch (_) {}
+
+  setTimeout(() => {
+    try {
+      window.location.reload();
+    } catch (_) {
+      location.reload();
+    }
+  }, 150);
+}
+
+function resetPullRefreshState_(){
+  __PULL_REFRESH_ARMED__ = false;
+  __PULL_REFRESH_START_Y__ = 0;
+  __PULL_REFRESH_LAST_DELTA__ = 0;
+  __PULL_REFRESH_TRACKING__ = false;
+
+  const hint = document.getElementById("pullRefreshHint");
+  if (hint) {
+    hint.classList.remove("show");
+    hint.textContent = "بروزرسانی برنامه";
+  }
+}
+
+function bindAppRefreshUI_(){
+  const refreshBtn = document.getElementById("refreshAppBtn");
+  const modal = document.getElementById("appRefreshModal");
+  const confirmBtn = document.getElementById("appRefreshConfirmBtn");
+  const cancelBtn = document.getElementById("appRefreshCancelBtn");
+  const scrollArea = document.getElementById("scrollArea");
+  const hint = document.getElementById("pullRefreshHint");
+
+  if (refreshBtn && !refreshBtn.__boundRefreshClick) {
+    refreshBtn.__boundRefreshClick = true;
+    refreshBtn.addEventListener("click", () => {
+      showAppRefreshModal_();
+    });
+  }
+
+  if (confirmBtn && !confirmBtn.__boundRefreshConfirm) {
+    confirmBtn.__boundRefreshConfirm = true;
+    confirmBtn.addEventListener("click", () => {
+      refreshAppNow_();
+    });
+  }
+
+  if (cancelBtn && !cancelBtn.__boundRefreshCancel) {
+    cancelBtn.__boundRefreshCancel = true;
+    cancelBtn.addEventListener("click", () => {
+      hideAppRefreshModal_();
+    });
+  }
+
+  if (modal && !modal.__boundRefreshBackdrop) {
+    modal.__boundRefreshBackdrop = true;
+    modal.addEventListener("mousedown", (e) => {
+      if (e.target === modal) hideAppRefreshModal_();
+    });
+    modal.addEventListener("touchstart", (e) => {
+      if (e.target === modal) hideAppRefreshModal_();
+    }, { passive: true });
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && __APP_REFRESH_MODAL_OPEN__) {
+      hideAppRefreshModal_();
+    }
+  });
+
+  if (!scrollArea || scrollArea.__boundPullRefresh) return;
+  scrollArea.__boundPullRefresh = true;
+
+  scrollArea.addEventListener("touchstart", (e) => {
+    if (__APP_REFRESH_MODAL_OPEN__) return;
+    if (!canStartPullRefreshFromTarget_(e.target)) return;
+    if ((scrollArea.scrollTop || 0) > 0) return;
+
+    const touch = e.touches && e.touches[0];
+    if (!touch) return;
+
+    __PULL_REFRESH_TRACKING__ = true;
+    __PULL_REFRESH_START_Y__ = touch.clientY;
+    __PULL_REFRESH_LAST_DELTA__ = 0;
+    __PULL_REFRESH_ARMED__ = false;
+  }, { passive: true });
+
+  scrollArea.addEventListener("touchmove", (e) => {
+    if (!__PULL_REFRESH_TRACKING__) return;
+    if ((scrollArea.scrollTop || 0) > 0) {
+      resetPullRefreshState_();
+      return;
+    }
+
+    const touch = e.touches && e.touches[0];
+    if (!touch) return;
+
+    const delta = Math.max(0, touch.clientY - __PULL_REFRESH_START_Y__);
+    __PULL_REFRESH_LAST_DELTA__ = delta;
+
+    if (delta >= 90) {
+      __PULL_REFRESH_ARMED__ = true;
+      if (hint) {
+        hint.textContent = "برای بروزرسانی رها کنید";
+        hint.classList.add("show");
+      }
+    } else if (delta >= 35) {
+      __PULL_REFRESH_ARMED__ = false;
+      if (hint) {
+        hint.textContent = "برای بروزرسانی برنامه بکشید";
+        hint.classList.add("show");
+      }
+    } else if (hint) {
+      hint.classList.remove("show");
+    }
+  }, { passive: true });
+
+  const finishPull = () => {
+    if (!__PULL_REFRESH_TRACKING__) return;
+
+    const shouldOpen = __PULL_REFRESH_ARMED__ && __PULL_REFRESH_LAST_DELTA__ >= 90;
+    resetPullRefreshState_();
+
+    if (shouldOpen) {
+      showAppRefreshModal_();
+    }
+  };
+
+  scrollArea.addEventListener("touchend", finishPull, { passive: true });
+  scrollArea.addEventListener("touchcancel", finishPull, { passive: true });
+}
+
 /* =========================================================
  * DRAFT SUBMISSION UID
  * ========================================================= */
@@ -4341,6 +4519,7 @@ window.clearForm = clearForm;
 function safeBoot() {
   try {
     bindPickerDom();
+    bindAppRefreshUI_();
   } catch (e) {
     console.error("Client boot error:", e);
     try { setStatus("خطای داخلی در کلاینت", false); } catch (_) {}
