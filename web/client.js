@@ -1862,6 +1862,12 @@ function createSearchDropdown(mountEl, cfg){
     selectedValue = String(v ?? "");
     input.value = selectedValue;
     close();
+
+    try {
+      if (typeof cfg.onPick === "function") {
+        cfg.onPick(selectedValue);
+      }
+    } catch (_) {}
   }
 
   function ensureAddRow(){
@@ -2485,7 +2491,10 @@ function renderDynamicForm(schema, optionsRows){
       createSearchDropdown(mount, {
         options: choices,
         placeholder: "جستجو یا انتخاب...",
-        allowAdd: info.allowAdd
+        allowAdd: info.allowAdd,
+        onPick: () => {
+          setTimeout(() => focusNextQuestionField_(fieldId), 60);
+        }
       });
     }
 
@@ -2564,7 +2573,13 @@ function renderDynamicForm(schema, optionsRows){
       } else {
         ctlHost.innerHTML = `<div id="${fieldId}"></div>`;
         const mount = row.querySelector(`#${fieldId}`);
-        createSearchDropdown(mount, { options: choices, placeholder: "انتخاب..." });
+        createSearchDropdown(mount, {
+          options: choices,
+          placeholder: "انتخاب...",
+          onPick: () => {
+            setTimeout(() => focusNextQuestionField_(fieldId), 60);
+          }
+        });
       }
     }
 
@@ -3467,6 +3482,72 @@ function showValidationToast_(msg){
       t.classList.remove("validation");
     }, 160);
   }, 3600);
+}
+
+function focusNextQuestionField_(currentFieldId){
+  const root = document.getElementById("dynForm");
+  const scrollArea = document.getElementById("scrollArea");
+  if (!root || !currentFieldId) return;
+
+  const fieldRows = Array.from(root.querySelectorAll(".field"));
+  const currentField =
+    document.getElementById(currentFieldId)?.closest(".field") ||
+    document.getElementById(currentFieldId + "__control")?.closest(".field") ||
+    null;
+
+  if (!currentField) return;
+
+  const idx = fieldRows.indexOf(currentField);
+  if (idx < 0) return;
+
+  const getFocusableForField = (fieldEl) => {
+    if (!fieldEl) return null;
+
+    return (
+      fieldEl.querySelector(".sdInput") ||
+      fieldEl.querySelector('input[type="text"]') ||
+      fieldEl.querySelector("textarea") ||
+      fieldEl.querySelector('input[type="radio"]') ||
+      fieldEl.querySelector(".fuBtn") ||
+      fieldEl.querySelector("button") ||
+      null
+    );
+  };
+
+  for (let i = idx + 1; i < fieldRows.length; i++) {
+    const nextField = fieldRows[i];
+    const target = getFocusableForField(nextField);
+    if (!target) continue;
+
+    try {
+      if (scrollArea) {
+        const rowRect = nextField.getBoundingClientRect();
+        const scrollRect = scrollArea.getBoundingClientRect();
+        const fixedHeader = document.getElementById("fixedHeaderArea");
+        const headerOffset = Math.max(18, Math.min(42, Number(fixedHeader?.offsetHeight || 0) * 0.2));
+
+        const targetTop =
+          scrollArea.scrollTop +
+          (rowRect.top - scrollRect.top) -
+          headerOffset;
+
+        scrollArea.scrollTo({
+          top: Math.max(0, targetTop),
+          behavior: "smooth"
+        });
+      } else if (typeof nextField.scrollIntoView === "function") {
+        nextField.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+    } catch (_) {}
+
+    setTimeout(() => {
+      try {
+        target.focus();
+      } catch (_) {}
+    }, 260);
+
+    break;
+  }
 }
 
 function focusMissingField_(miss){
