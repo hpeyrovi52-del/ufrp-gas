@@ -3555,6 +3555,10 @@ function focusNextQuestionField_(currentFieldId){
     );
   };
 
+  const isDropdownField_ = (fieldEl) => {
+    return !!(fieldEl && fieldEl.querySelector && fieldEl.querySelector(".sdWrap"));
+  };
+
   const scrollFieldIntoViewWithinApp_ = (fieldEl) => {
     if (!fieldEl || !scrollArea) return;
 
@@ -3562,18 +3566,25 @@ function focusNextQuestionField_(currentFieldId){
       const rowRect = fieldEl.getBoundingClientRect();
       const scrollRect = scrollArea.getBoundingClientRect();
       const fixedHeader = document.getElementById("fixedHeaderArea");
-      const headerOffset = Math.max(18, Math.min(42, Number(fixedHeader?.offsetHeight || 0) * 0.2));
+      const baseHeaderOffset = Math.max(18, Math.min(42, Number(fixedHeader?.offsetHeight || 0) * 0.2));
 
       const viewportHeight = Number(window.visualViewport?.height || window.innerHeight || 0);
       const keyboardInset = Math.max(0, Number(window.innerHeight || 0) - viewportHeight);
       const effectiveBottom = Math.min(scrollRect.bottom, viewportHeight || scrollRect.bottom) - Math.max(18, keyboardInset + 10);
 
+      const dropdownField = isDropdownField_(fieldEl);
+      const desiredTopOffset = dropdownField ? (baseHeaderOffset + 110) : baseHeaderOffset;
+      const desiredMenuRoom = dropdownField ? 220 : 0;
+
       let targetTop = scrollArea.scrollTop;
 
-      if (rowRect.top < (scrollRect.top + headerOffset)) {
-        targetTop += rowRect.top - (scrollRect.top + headerOffset);
-      } else if (rowRect.bottom > effectiveBottom) {
-        targetTop += rowRect.bottom - effectiveBottom;
+      const desiredTopEdge = scrollRect.top + desiredTopOffset;
+      const desiredBottomEdge = effectiveBottom - desiredMenuRoom;
+
+      if (rowRect.top < desiredTopEdge) {
+        targetTop += rowRect.top - desiredTopEdge;
+      } else if (rowRect.bottom > desiredBottomEdge) {
+        targetTop += rowRect.bottom - desiredBottomEdge;
       }
 
       scrollArea.scrollTo({
