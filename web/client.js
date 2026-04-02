@@ -3608,7 +3608,7 @@ function focusNextQuestionField_(currentFieldId){
           targetTop += projectedRowBottom - desiredBottomEdge;
         }
       } else if (textEntryField) {
-        const preferredTopOffset = baseHeaderOffset + 28;
+        const preferredTopOffset = baseHeaderOffset + 110;
         const preferredTopEdge = scrollRect.top + preferredTopOffset;
 
         const idealTargetTop =
@@ -3623,7 +3623,7 @@ function focusNextQuestionField_(currentFieldId){
 
         const projectedRowTop = rowRect.top - (targetTop - scrollArea.scrollTop);
         const projectedRowBottom = rowRect.bottom - (targetTop - scrollArea.scrollTop);
-        const desiredBottomEdge = effectiveBottom - 70;
+        const desiredBottomEdge = effectiveBottom - 80;
 
         if (projectedRowTop < preferredTopEdge) {
           targetTop += projectedRowTop - preferredTopEdge;
