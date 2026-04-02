@@ -50,8 +50,10 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
     <!-- =====================================================
          PWA META
          ===================================================== -->
-    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="manifest" href="/manifest.webmanifest?v=<?php echo @filemtime(__DIR__ . "/manifest.webmanifest") ?: time(); ?>">
     <meta name="theme-color" content="#ffffff" />
+    <meta name="application-name" content="UFRP-IR" />
+    <meta name="apple-mobile-web-app-title" content="UFRP-IR" />
 
     <title>سامانه ثبت تراکنش های مالی</title>
 
