@@ -3984,7 +3984,11 @@ async function appInit(){
     const sess = await gsCall("session_get");
 
     if (sess && sess.ok && sess.user && sess.user.email) {
-      res = await gsCall("app_getMenuForEmail", sess.user.email);
+      res = await fetch("/api/menu.php", {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store"
+      }).then(r => r.json());
 
       try {
         localStorage.setItem(
@@ -4021,7 +4025,11 @@ async function appInit(){
              * NEW:
              *   res = await gsCall("app_getMenuForEmail", window.__UFRP_USER_EMAIL__);
              * ================================================= */
-            res = await gsCall("app_getMenuForEmail", window.__UFRP_USER_EMAIL__);
+            res = await fetch("/api/menu.php", {
+              method: "GET",
+              credentials: "include",
+              cache: "no-store"
+            }).then(r => r.json());
 
             try {
               localStorage.setItem("__UFRP_MENU_CACHE__", JSON.stringify({
