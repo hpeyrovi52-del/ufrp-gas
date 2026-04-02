@@ -3573,18 +3573,39 @@ function focusNextQuestionField_(currentFieldId){
       const effectiveBottom = Math.min(scrollRect.bottom, viewportHeight || scrollRect.bottom) - Math.max(18, keyboardInset + 10);
 
       const dropdownField = isDropdownField_(fieldEl);
-      const desiredTopOffset = dropdownField ? (baseHeaderOffset + 110) : baseHeaderOffset;
-      const desiredMenuRoom = dropdownField ? 220 : 0;
-
       let targetTop = scrollArea.scrollTop;
 
-      const desiredTopEdge = scrollRect.top + desiredTopOffset;
-      const desiredBottomEdge = effectiveBottom - desiredMenuRoom;
+      if (dropdownField) {
+        const preferredTopOffset = baseHeaderOffset + 70;
+        const preferredTopEdge = scrollRect.top + preferredTopOffset;
 
-      if (rowRect.top < desiredTopEdge) {
-        targetTop += rowRect.top - desiredTopEdge;
-      } else if (rowRect.bottom > desiredBottomEdge) {
-        targetTop += rowRect.bottom - desiredBottomEdge;
+        const idealTargetTop =
+          scrollArea.scrollTop +
+          (rowRect.top - scrollRect.top) -
+          preferredTopOffset;
+
+        const maxScrollableTop = Math.max(0, scrollArea.scrollHeight - scrollArea.clientHeight);
+        const clampedIdealTop = Math.max(0, Math.min(maxScrollableTop, idealTargetTop));
+
+        targetTop = clampedIdealTop;
+
+        const projectedRowTop = rowRect.top - (targetTop - scrollArea.scrollTop);
+        const projectedRowBottom = rowRect.bottom - (targetTop - scrollArea.scrollTop);
+        const desiredBottomEdge = effectiveBottom - 240;
+
+        if (projectedRowTop < preferredTopEdge) {
+          targetTop += projectedRowTop - preferredTopEdge;
+        } else if (projectedRowBottom > desiredBottomEdge) {
+          targetTop += projectedRowBottom - desiredBottomEdge;
+        }
+      } else {
+        const desiredTopEdge = scrollRect.top + baseHeaderOffset;
+
+        if (rowRect.top < desiredTopEdge) {
+          targetTop += rowRect.top - desiredTopEdge;
+        } else if (rowRect.bottom > effectiveBottom) {
+          targetTop += rowRect.bottom - effectiveBottom;
+        }
       }
 
       scrollArea.scrollTo({
