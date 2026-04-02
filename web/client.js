@@ -3350,7 +3350,9 @@ function validateRequiredFields_(schema){
     if (type === "FILE_UPLOAD"){
       const fileInput = document.getElementById(fieldId);
       const selectedCount = Array.isArray(fileInput?.__items) ? fileInput.__items.length : 0;
-      if (selectedCount <= 0) missing.push("• " + title);
+      if (selectedCount <= 0) {
+        missing.push({ index: i, fieldId, title, type });
+      }
       continue;
     }
 
@@ -3358,7 +3360,9 @@ function validateRequiredFields_(schema){
       const hiddenVal = document.getElementById(fieldId + "__value");
       if (hiddenVal){
         const v = String(hiddenVal.value || "").trim();
-        if (!v) missing.push("• " + title);
+        if (!v) {
+          missing.push({ index: i, fieldId, title, type });
+        }
         continue;
       }
     }
@@ -3367,7 +3371,9 @@ function validateRequiredFields_(schema){
     if (ddHolder && ddHolder.querySelector && ddHolder.querySelector(".sdWrap")){
       const wrap = ddHolder.querySelector(".sdWrap");
       const v = wrap?.__sdApi?.getValue ? wrap.__sdApi.getValue() : "";
-      if (!String(v || "").trim()) missing.push("• " + title);
+      if (!String(v || "").trim()) {
+        missing.push({ index: i, fieldId, title, type: "DROPDOWN" });
+      }
       continue;
     }
 
@@ -3375,7 +3381,9 @@ function validateRequiredFields_(schema){
     if (!el) continue;
 
     const v = String(el.value || "").trim();
-    if (!v) missing.push("• " + title);
+    if (!v) {
+      missing.push({ index: i, fieldId, title, type });
+    }
   }
 
   return missing;
@@ -3437,8 +3445,83 @@ function showToast_(msg){
   if (!t) return;
 
   t.textContent = msg || "✅ انجام شد";
+  t.style.background = "";
+  t.style.color = "";
   t.classList.add("show");
   setTimeout(() => t.classList.remove("show"), 1500);
+}
+
+function showValidationToast_(msg){
+  const t = document.getElementById("toast");
+  if (!t) return;
+
+  t.textContent = msg || "فیلد الزامی تکمیل نشده است";
+  t.style.background = "rgba(153,27,27,0.94)";
+  t.style.color = "#ffffff";
+  t.classList.add("show");
+
+  setTimeout(() => {
+    t.classList.remove("show");
+    t.style.background = "";
+    t.style.color = "";
+  }, 2200);
+}
+
+function focusMissingField_(miss){
+  const fieldId = String(miss?.fieldId || "").trim();
+  if (!fieldId) return;
+
+  const row =
+    document.getElementById(fieldId)?.closest(".field") ||
+    document.getElementById(fieldId + "__control")?.closest(".field") ||
+    document.getElementById(fieldId + "__btn")?.closest(".field") ||
+    document.getElementById(fieldId + "__value")?.closest(".field");
+
+  try {
+    if (row && typeof row.scrollIntoView === "function") {
+      row.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  } catch (_) {}
+
+  setTimeout(() => {
+    try {
+      const type = String(miss?.type || "").trim();
+
+      if (type === "FILE_UPLOAD") {
+        const btn = document.getElementById(fieldId + "__btn");
+        if (btn && typeof btn.focus === "function") btn.focus();
+        return;
+      }
+
+      if (type === "MULTIPLE_CHOICE") {
+        const other = document.getElementById(fieldId + "__other");
+        const firstRadio = document.querySelector(`input[name="${fieldId}__radio"]`);
+        if (firstRadio && typeof firstRadio.focus === "function") {
+          firstRadio.focus();
+          return;
+        }
+        if (other && typeof other.focus === "function") {
+          other.focus();
+          return;
+        }
+      }
+
+      if (type === "DROPDOWN") {
+        const host = document.getElementById(fieldId);
+        const input = host ? host.querySelector(".sdInput") : null;
+        if (input && typeof input.focus === "function") {
+          input.focus();
+          return;
+        }
+      }
+
+      const el = document.getElementById(fieldId);
+      if (el && typeof el.focus === "function") {
+        el.focus();
+        return;
+      }
+    } catch (_) {}
+  }, 280);
 }
 
 let __APP_REFRESH_MODAL_OPEN__ = false;
@@ -3704,7 +3787,9 @@ window.submitForm = async function submitForm(){
 
     const missing = validateRequiredFields_(APP.currentSchema);
     if (missing.length){
-      alert("Please fill required fields:\n\n" + missing.join("\n"));
+      const firstMissing = missing[0];
+      showValidationToast_(`فیلد الزامی «${String(firstMissing?.title || "").trim()}» باید تکمیل شود`);
+      focusMissingField_(firstMissing);
       return;
     }
 
