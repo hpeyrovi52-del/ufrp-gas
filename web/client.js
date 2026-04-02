@@ -3573,6 +3573,15 @@ function focusNextQuestionField_(currentFieldId){
       const effectiveBottom = Math.min(scrollRect.bottom, viewportHeight || scrollRect.bottom) - Math.max(18, keyboardInset + 10);
 
       const dropdownField = isDropdownField_(fieldEl);
+      const textEntryField = !!(
+        fieldEl &&
+        fieldEl.querySelector &&
+        (
+          fieldEl.querySelector('input[type="text"]:not(.sdInput)') ||
+          fieldEl.querySelector("textarea")
+        )
+      );
+
       let targetTop = scrollArea.scrollTop;
 
       if (dropdownField) {
@@ -3592,6 +3601,29 @@ function focusNextQuestionField_(currentFieldId){
         const projectedRowTop = rowRect.top - (targetTop - scrollArea.scrollTop);
         const projectedRowBottom = rowRect.bottom - (targetTop - scrollArea.scrollTop);
         const desiredBottomEdge = effectiveBottom - 240;
+
+        if (projectedRowTop < preferredTopEdge) {
+          targetTop += projectedRowTop - preferredTopEdge;
+        } else if (projectedRowBottom > desiredBottomEdge) {
+          targetTop += projectedRowBottom - desiredBottomEdge;
+        }
+      } else if (textEntryField) {
+        const preferredTopOffset = baseHeaderOffset + 28;
+        const preferredTopEdge = scrollRect.top + preferredTopOffset;
+
+        const idealTargetTop =
+          scrollArea.scrollTop +
+          (rowRect.top - scrollRect.top) -
+          preferredTopOffset;
+
+        const maxScrollableTop = Math.max(0, scrollArea.scrollHeight - scrollArea.clientHeight);
+        const clampedIdealTop = Math.max(0, Math.min(maxScrollableTop, idealTargetTop));
+
+        targetTop = clampedIdealTop;
+
+        const projectedRowTop = rowRect.top - (targetTop - scrollArea.scrollTop);
+        const projectedRowBottom = rowRect.bottom - (targetTop - scrollArea.scrollTop);
+        const desiredBottomEdge = effectiveBottom - 70;
 
         if (projectedRowTop < preferredTopEdge) {
           targetTop += projectedRowTop - preferredTopEdge;
