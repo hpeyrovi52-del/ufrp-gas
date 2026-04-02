@@ -1,6 +1,6 @@
 {
-  "name": "سامانه ثبت تراکنش های مالی",
-  "short_name": "UTR",
+  "name": "UFRP-IR",
+  "short_name": "UFRP-IR",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
