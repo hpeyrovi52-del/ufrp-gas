@@ -3678,22 +3678,42 @@ function focusNextQuestionField_(currentFieldId){
       const keyboardInset = Math.max(0, Number(window.innerHeight || 0) - viewportHeight);
       const effectiveBottom = Math.min(scrollRect.bottom, viewportHeight || scrollRect.bottom) - Math.max(18, keyboardInset + 10);
 
-      const preferredTopOffset = baseHeaderOffset + 70;
-      const preferredTopEdge = scrollRect.top + preferredTopOffset;
+      const visibleTop = scrollRect.top + baseHeaderOffset + 12;
+      const visibleHeight = Math.max(120, effectiveBottom - visibleTop);
 
-      const idealTargetTop =
+      const menuEl = fieldEl.querySelector(".sdMenu");
+      let menuMaxHeight = 0;
+
+      try {
+        if (menuEl) {
+          const cs = window.getComputedStyle(menuEl);
+          const px = parseFloat(cs.maxHeight || "0");
+          if (Number.isFinite(px) && px > 0) menuMaxHeight = px;
+        }
+      } catch (_) {}
+
+      if (!menuMaxHeight) {
+        menuMaxHeight = Math.max(140, Math.min(280, visibleHeight * 0.42));
+      }
+
+      const preferredTopGap = Math.max(24, Math.min(84, visibleHeight * 0.12));
+      const preferredTopEdge = visibleTop + preferredTopGap;
+
+      const desiredMenuRoom = Math.max(
+        120,
+        Math.min(menuMaxHeight, visibleHeight * 0.58)
+      );
+
+      let targetTop =
         scrollArea.scrollTop +
-        (rowRect.top - scrollRect.top) -
-        preferredTopOffset;
+        (rowRect.top - preferredTopEdge);
 
       const maxScrollableTop = Math.max(0, scrollArea.scrollHeight - scrollArea.clientHeight);
-      const clampedIdealTop = Math.max(0, Math.min(maxScrollableTop, idealTargetTop));
-
-      let targetTop = clampedIdealTop;
+      targetTop = Math.max(0, Math.min(maxScrollableTop, targetTop));
 
       const projectedRowTop = rowRect.top - (targetTop - scrollArea.scrollTop);
       const projectedRowBottom = rowRect.bottom - (targetTop - scrollArea.scrollTop);
-      const desiredBottomEdge = effectiveBottom - 240;
+      const desiredBottomEdge = effectiveBottom - desiredMenuRoom;
 
       if (projectedRowTop < preferredTopEdge) {
         targetTop += projectedRowTop - preferredTopEdge;
@@ -3701,8 +3721,10 @@ function focusNextQuestionField_(currentFieldId){
         targetTop += projectedRowBottom - desiredBottomEdge;
       }
 
+      targetTop = Math.max(0, Math.min(maxScrollableTop, targetTop));
+
       scrollArea.scrollTo({
-        top: Math.max(0, targetTop),
+        top: targetTop,
         behavior: "smooth"
       });
     } catch (_) {}

@@ -505,7 +505,7 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
         overflow: hidden;
         z-index: 50;
         display: none;
-        max-height: 280px;
+        max-height: min(280px, 42dvh);
         flex-direction: column;
       }
 
