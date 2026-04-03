@@ -1813,6 +1813,13 @@ function flattenMenuForms(menu){
   return out;
 }
 
+function updateRefreshChipVisibility_(isMenuView){
+  const refreshBtn = qs("#refreshAppBtn");
+  if (!refreshBtn) return;
+
+  refreshBtn.style.display = isMenuView ? "inline-flex" : "none";
+}
+
 function showMenuView(){
   const mv = qs("#menuView");
   const fv = qs("#formView");
@@ -1823,6 +1830,8 @@ function showMenuView(){
   if (fv) fv.style.display = "none";
   if (back) back.style.display = "none";
   if (fsh) fsh.style.display = "none";
+
+  updateRefreshChipVisibility_(true);
 
   const ft = qs("#formTitle");
   const fs = qs("#formSubtitle");
@@ -1841,6 +1850,8 @@ function showFormView(){
   if (fv) fv.style.display = "block";
   if (back) back.style.display = "inline-flex";
   if (fsh) fsh.style.display = "block";
+
+  updateRefreshChipVisibility_(false);
 }
 
 function renderMenu(menu){
