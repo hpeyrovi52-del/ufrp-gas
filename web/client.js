@@ -1756,6 +1756,120 @@ function renderMenu(menu){
   });
 }
 
+let __UFRP_PREFETCH_HIDE_TIMER__ = null;
+let __UFRP_PREFETCH_MENU_PHASE__ = false;
+let __UFRP_PREFETCH_MENU_TIMER__ = null;
+let __UFRP_PREFETCH_PENDING_PROGRESS__ = null;
+
+function setPrefetchChipState_(text, mode){
+  const chip = document.getElementById("prefetchChip");
+  const txt = document.getElementById("prefetchText");
+  if (!chip || !txt) return;
+
+  if (__UFRP_PREFETCH_HIDE_TIMER__) {
+    clearTimeout(__UFRP_PREFETCH_HIDE_TIMER__);
+    __UFRP_PREFETCH_HIDE_TIMER__ = null;
+  }
+
+  chip.classList.remove("done", "error");
+  if (mode === "done") chip.classList.add("done");
+  if (mode === "error") chip.classList.add("error");
+
+  txt.textContent = String(text || "").trim();
+  chip.style.display = text ? "inline-flex" : "none";
+}
+
+function hidePrefetchChip_(){
+  const chip = document.getElementById("prefetchChip");
+  if (!chip) return;
+  chip.style.display = "none";
+  chip.classList.remove("done", "error");
+}
+
+function scheduleHidePrefetchChip_(ms){
+  if (__UFRP_PREFETCH_HIDE_TIMER__) {
+    clearTimeout(__UFRP_PREFETCH_HIDE_TIMER__);
+  }
+  __UFRP_PREFETCH_HIDE_TIMER__ = setTimeout(() => {
+    hidePrefetchChip_();
+    __UFRP_PREFETCH_HIDE_TIMER__ = null;
+  }, Math.max(0, Number(ms || 0)));
+}
+
+function showMenuReadyChip_(){
+  if (__UFRP_PREFETCH_MENU_TIMER__) {
+    clearTimeout(__UFRP_PREFETCH_MENU_TIMER__);
+    __UFRP_PREFETCH_MENU_TIMER__ = null;
+  }
+
+  __UFRP_PREFETCH_MENU_PHASE__ = true;
+  __UFRP_PREFETCH_PENDING_PROGRESS__ = null;
+  setPrefetchChipState_("منو بروزرسانی و آماده شد", "pending");
+
+  __UFRP_PREFETCH_MENU_TIMER__ = setTimeout(() => {
+    __UFRP_PREFETCH_MENU_PHASE__ = false;
+    __UFRP_PREFETCH_MENU_TIMER__ = null;
+
+    if (__UFRP_PREFETCH_PENDING_PROGRESS__) {
+      const p = __UFRP_PREFETCH_PENDING_PROGRESS__;
+      __UFRP_PREFETCH_PENDING_PROGRESS__ = null;
+      setPrefetchChipState_(
+        `در حال آماده‌سازی فرم‌ها — ${toFaDigits(String(p.done || 0))} از ${toFaDigits(String(p.total || 0))}`,
+        "pending"
+      );
+    }
+  }, 900);
+}
+
+function showPrefetchProgress_(done, total){
+  if (__UFRP_PREFETCH_MENU_PHASE__) {
+    __UFRP_PREFETCH_PENDING_PROGRESS__ = {
+      done: Number(done || 0),
+      total: Number(total || 0)
+    };
+    return;
+  }
+
+  setPrefetchChipState_(
+    `در حال آماده‌سازی فرم‌ها — ${toFaDigits(String(done || 0))} از ${toFaDigits(String(total || 0))}`,
+    "pending"
+  );
+}
+
+function finishPrefetchProgress_(ok, fail, total){
+  const done = Number(ok || 0) + Number(fail || 0);
+
+  if (__UFRP_PREFETCH_MENU_TIMER__) {
+    clearTimeout(__UFRP_PREFETCH_MENU_TIMER__);
+    __UFRP_PREFETCH_MENU_TIMER__ = null;
+  }
+  __UFRP_PREFETCH_MENU_PHASE__ = false;
+  __UFRP_PREFETCH_PENDING_PROGRESS__ = null;
+
+  if (done <= 0 || total <= 0) {
+    hidePrefetchChip_();
+    return;
+  }
+
+  if (fail <= 0 && ok >= total) {
+    setPrefetchChipState_("همه فرم‌ها آماده شد", "done");
+    scheduleHidePrefetchChip_(2200);
+    return;
+  }
+
+  if (ok > 0) {
+    setPrefetchChipState_(
+      `${toFaDigits(String(ok))} از ${toFaDigits(String(total))} فرم آماده شد`,
+      "error"
+    );
+    scheduleHidePrefetchChip_(3200);
+    return;
+  }
+
+  setPrefetchChipState_("آماده‌سازی فرم‌ها کامل نشد", "error");
+  scheduleHidePrefetchChip_(3200);
+}
+
 /* =========================================================
  * OPTIONS MAP
  * ========================================================= */
@@ -4703,6 +4817,7 @@ async function appInit(){
   }
 
   renderMenu(APP.menu);
+  showMenuReadyChip_();
   setStatus("", false);
 
   /* =======================================================
@@ -4737,9 +4852,11 @@ async function appInit(){
       window.__UFRP_PREFETCH_RUNNING__ = true;
 
       console.log("Prefetch starting ✅ forms =", keys.length);
+      showPrefetchProgress_(0, keys.length);
 
       setTimeout(async () => {
         let ok = 0, fail = 0;
+        let doneCount = 0;
 
         try {
           const sess = await gsCall("session_get");
@@ -4758,6 +4875,8 @@ async function appInit(){
             const alreadyOptionsFresh = sessionStorage.getItem("__UFRP_SESSION_OPTIONS_REFRESHED__:" + k) === "1";
 
             if (alreadyBundleFresh && alreadyOptionsFresh) {
+              doneCount++;
+              showPrefetchProgress_(doneCount, keys.length);
               console.log("Prefetch skipped (already refreshed this session) ✅", k);
               continue;
             }
@@ -4765,6 +4884,8 @@ async function appInit(){
             const cacheKey = "__UFRP_BUNDLE_CACHE__:" + k;
 
             if (!navigator.onLine && localStorage.getItem(cacheKey)) {
+              doneCount++;
+              showPrefetchProgress_(doneCount, keys.length);
               continue;
             }
 
@@ -4823,12 +4944,15 @@ async function appInit(){
               console.warn("Prefetch error ❌", k, e?.message || e);
             }
 
+            doneCount++;
+            showPrefetchProgress_(doneCount, keys.length);
             await new Promise(r => setTimeout(r, 150));
           }
 
         } catch (e) {
           console.warn("Prefetch bootstrap failed:", e?.message || e);
         } finally {
+          finishPrefetchProgress_(ok, fail, keys.length);
           console.log("Prefetch finished ✅ ok =", ok, "fail =", fail);
           window.__UFRP_PREFETCH_RUNNING__ = false;
         }

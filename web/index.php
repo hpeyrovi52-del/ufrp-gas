@@ -1086,6 +1086,45 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
         stroke-linejoin:round;
       }
 
+      .topUtilityStack{
+        display:flex;
+        flex-direction:column;
+        align-items:flex-end;
+        gap:8px;
+        flex:0 0 auto;
+      }
+
+      .prefetchChip{
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        gap:8px;
+        min-height:42px;
+        padding:0 14px;
+        border-radius:999px;
+        border:1px solid rgba(30,91,215,0.14);
+        background: rgba(30,91,215,0.08);
+        color: rgba(30,91,215,0.96);
+        font-size:13px;
+        font-weight:900;
+        white-space:nowrap;
+        width:auto;
+        max-width:min(88vw, 320px);
+        box-sizing:border-box;
+      }
+
+      .prefetchChip.done{
+        border-color: rgba(34,197,94,0.18);
+        background: rgba(34,197,94,0.10);
+        color: rgba(21,128,61,0.96);
+      }
+
+      .prefetchChip.error{
+        border-color: rgba(245,158,11,0.20);
+        background: rgba(245,158,11,0.10);
+        color: rgba(146,64,14,0.96);
+      }
+
       @media (hover: none), (pointer: coarse) {
         .desktopRefreshBtn{
           display:none !important;
@@ -1212,19 +1251,28 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
               </div>
 
               <div class="topLeftActions">
-                <button
-                  id="refreshAppBtn"
-                  class="desktopRefreshBtn"
-                  type="button"
-                  title="بروزرسانی کامل برنامه"
-                  aria-label="بروزرسانی کامل برنامه"
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
-                    <path d="M21 3v6h-6"></path>
-                  </svg>
-                  <span>بروزرسانی کامل برنامه</span>
-                </button>
+                <div class="topUtilityStack">
+                  <button
+                    id="refreshAppBtn"
+                    class="desktopRefreshBtn"
+                    type="button"
+                    title="بروزرسانی کامل برنامه"
+                    aria-label="بروزرسانی کامل برنامه"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
+                      <path d="M21 3v6h-6"></path>
+                    </svg>
+                    <span>بروزرسانی کامل برنامه</span>
+                  </button>
+
+                  <div id="prefetchChip"
+                       class="prefetchChip"
+                       style="display:none;"
+                       aria-live="polite">
+                    <span id="prefetchText">در حال آماده‌سازی فرم‌ها</span>
+                  </div>
+                </div>
 
                 <button class="backBtn"
                         id="backBtn"
