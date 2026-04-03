@@ -287,11 +287,16 @@ function bindAutoEqualShareGroup_(root){
   const rows = Array.from((root || document).querySelectorAll('.field[data-auto-equal-share="1"]'));
   if (rows.length < 2) return;
 
-  function resetShareRow_(row){
+  function resetShareRowIfEqual_(row){
     const fieldId = String(row?.dataset?.autoEqualFieldId || "").trim();
     if (!fieldId) return;
 
     const radios = Array.from(row.querySelectorAll(`input[name="${fieldId}__radio"]`));
+    const checkedRadio = radios.find((r) => r.checked);
+    const pickedVal = String(checkedRadio?.value || "").trim();
+
+    if (pickedVal !== "مساوی") return;
+
     radios.forEach((r) => { r.checked = false; });
 
     const hiddenVal = row.querySelector(`#${fieldId}__value`);
@@ -346,7 +351,7 @@ function bindAutoEqualShareGroup_(root){
           if (pickedVal === "سایر") {
             rows.forEach((otherRow) => {
               if (otherRow === row) return;
-              resetShareRow_(otherRow);
+              resetShareRowIfEqual_(otherRow);
             });
           }
         } finally {
