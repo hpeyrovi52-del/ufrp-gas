@@ -3626,15 +3626,20 @@ function focusNextQuestionField_(currentFieldId){
       const keyboardInset = Math.max(0, Number(window.innerHeight || 0) - viewportHeight);
       const effectiveBottom = Math.min(scrollRect.bottom, viewportHeight || scrollRect.bottom) - Math.max(18, keyboardInset + 10);
 
-      let targetTop = scrollArea.scrollTop;
+      const visibleTop = scrollRect.top + baseHeaderOffset + 14;
+      const desiredBottomEdge = effectiveBottom - 20;
 
-      const desiredTopEdge = scrollRect.top + baseHeaderOffset + 28;
-      const desiredBottomEdge = effectiveBottom - 26;
+      let targetTop =
+        scrollArea.scrollTop +
+        (rowRect.bottom - desiredBottomEdge);
 
-      if (rowRect.top < desiredTopEdge) {
-        targetTop += rowRect.top - desiredTopEdge;
-      } else if (rowRect.bottom > desiredBottomEdge) {
-        targetTop += rowRect.bottom - desiredBottomEdge;
+      const maxScrollableTop = Math.max(0, scrollArea.scrollHeight - scrollArea.clientHeight);
+      targetTop = Math.max(0, Math.min(maxScrollableTop, targetTop));
+
+      const projectedTop = rowRect.top - (targetTop - scrollArea.scrollTop);
+
+      if (projectedTop < visibleTop) {
+        targetTop += projectedTop - visibleTop;
       }
 
       scrollArea.scrollTo({
@@ -3681,9 +3686,10 @@ function focusNextQuestionField_(currentFieldId){
         setTimeout(() => scrollDropdownFieldIntoViewWithinApp_(nextField), 120);
         setTimeout(() => scrollDropdownFieldIntoViewWithinApp_(nextField), 420);
       } else if (textEntryField) {
-        setTimeout(() => adjustTextEntryFieldAfterKeyboard_(nextField), 160);
-        setTimeout(() => adjustTextEntryFieldAfterKeyboard_(nextField), 420);
-        setTimeout(() => adjustTextEntryFieldAfterKeyboard_(nextField), 760);
+        setTimeout(() => adjustTextEntryFieldAfterKeyboard_(nextField), 120);
+        setTimeout(() => adjustTextEntryFieldAfterKeyboard_(nextField), 320);
+        setTimeout(() => adjustTextEntryFieldAfterKeyboard_(nextField), 620);
+        setTimeout(() => adjustTextEntryFieldAfterKeyboard_(nextField), 980);
       }
     }, dropdownField ? 260 : 120);
 
