@@ -1060,6 +1060,30 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
 
       .desktopRefreshBtn{
         display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        gap:8px;
+        height:42px;
+        padding:0 14px;
+        border-radius:999px;
+        border:1px solid rgba(30,91,215,0.16);
+        background: rgba(30,91,215,0.10);
+        color: rgba(30,91,215,0.98);
+        font-size:13px;
+        font-weight:900;
+        white-space:nowrap;
+        width:auto;
+        min-width:auto;
+      }
+
+      .desktopRefreshBtn svg{
+        width:17px;
+        height:17px;
+        stroke: currentColor;
+        fill:none;
+        stroke-width:2;
+        stroke-linecap:round;
+        stroke-linejoin:round;
       }
 
       @media (hover: none), (pointer: coarse) {
@@ -1190,15 +1214,16 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
               <div class="topLeftActions">
                 <button
                   id="refreshAppBtn"
-                  class="iconBtn desktopRefreshBtn"
+                  class="desktopRefreshBtn"
                   type="button"
-                  title="بروزرسانی برنامه"
-                  aria-label="بروزرسانی برنامه"
+                  title="بروزرسانی کامل برنامه"
+                  aria-label="بروزرسانی کامل برنامه"
                 >
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
                     <path d="M21 3v6h-6"></path>
                   </svg>
+                  <span>بروزرسانی کامل برنامه</span>
                 </button>
 
                 <button class="backBtn"
