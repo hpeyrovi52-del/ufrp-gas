@@ -1469,21 +1469,11 @@ function cancelOutboxLongPress_(){
   }
 }
 
-function beginOutboxLongPress_(e){
-  const chip = document.getElementById("outboxChip");
-  const panel = document.getElementById("outboxPanel");
-  const panelHeader = panel ? panel.querySelector(".outboxPanelHeader") : null;
-
-  const target = e.target instanceof Element ? e.target : null;
-  const onChip = !!(chip && target && chip.contains(target));
-  const onPanelHeader = !!(panelHeader && target && panelHeader.contains(target));
-
-  if (!onChip && !onPanelHeader) return;
-
+function armOutboxLongPress_(x, y){
   __OUTBOX_LONGPRESS_ACTIVE__ = true;
   __OUTBOX_LONGPRESS_FIRED__ = false;
-  __OUTBOX_LONGPRESS_START_X__ = Number(e.clientX || 0);
-  __OUTBOX_LONGPRESS_START_Y__ = Number(e.clientY || 0);
+  __OUTBOX_LONGPRESS_START_X__ = Number(x || 0);
+  __OUTBOX_LONGPRESS_START_Y__ = Number(y || 0);
 
   if (__outboxDebugTimer) clearTimeout(__outboxDebugTimer);
   __outboxDebugTimer = setTimeout(async () => {
@@ -1498,21 +1488,60 @@ function beginOutboxLongPress_(e){
   }, 4000);
 }
 
-function moveOutboxLongPress_(e){
+function beginOutboxLongPress_(e){
+  const chip = document.getElementById("outboxChip");
+  const panel = document.getElementById("outboxPanel");
+  const panelHeader = panel ? panel.querySelector(".outboxPanelHeader") : null;
+
+  const target = e.target instanceof Element ? e.target : null;
+  const onChip = !!(chip && target && chip.contains(target));
+  const onPanelHeader = !!(panelHeader && target && panelHeader.contains(target));
+
+  if (!onChip && !onPanelHeader) return;
+
+  armOutboxLongPress_(e.clientX, e.clientY);
+}
+
+function moveOutboxLongPress_(x, y){
   if (!__OUTBOX_LONGPRESS_ACTIVE__) return;
 
-  const dx = Math.abs(Number(e.clientX || 0) - __OUTBOX_LONGPRESS_START_X__);
-  const dy = Math.abs(Number(e.clientY || 0) - __OUTBOX_LONGPRESS_START_Y__);
+  const dx = Math.abs(Number(x || 0) - __OUTBOX_LONGPRESS_START_X__);
+  const dy = Math.abs(Number(y || 0) - __OUTBOX_LONGPRESS_START_Y__);
 
-  if (dx > 12 || dy > 12) {
+  if (dx > 14 || dy > 14) {
     cancelOutboxLongPress_();
   }
 }
 
 document.addEventListener("pointerdown", beginOutboxLongPress_, true);
-document.addEventListener("pointermove", moveOutboxLongPress_, true);
+document.addEventListener("pointermove", (e) => moveOutboxLongPress_(e.clientX, e.clientY), true);
 document.addEventListener("pointerup", cancelOutboxLongPress_, true);
 document.addEventListener("pointercancel", cancelOutboxLongPress_, true);
+
+document.addEventListener("touchstart", (e) => {
+  const touch = e.touches && e.touches[0];
+  if (!touch) return;
+
+  const chip = document.getElementById("outboxChip");
+  const panel = document.getElementById("outboxPanel");
+  const panelHeader = panel ? panel.querySelector(".outboxPanelHeader") : null;
+  const target = e.target instanceof Element ? e.target : null;
+
+  const onChip = !!(chip && target && chip.contains(target));
+  const onPanelHeader = !!(panelHeader && target && panelHeader.contains(target));
+  if (!onChip && !onPanelHeader) return;
+
+  armOutboxLongPress_(touch.clientX, touch.clientY);
+}, { passive: true, capture: true });
+
+document.addEventListener("touchmove", (e) => {
+  const touch = e.touches && e.touches[0];
+  if (!touch) return;
+  moveOutboxLongPress_(touch.clientX, touch.clientY);
+}, { passive: true, capture: true });
+
+document.addEventListener("touchend", cancelOutboxLongPress_, { passive: true, capture: true });
+document.addEventListener("touchcancel", cancelOutboxLongPress_, { passive: true, capture: true });
 
 document.addEventListener("click", (e) => {
   if (!__OUTBOX_LONGPRESS_FIRED__) return;
@@ -1570,15 +1599,26 @@ window.__UFRP_OUTBOX_SEED_ACTIVE__ = function (payload) {
 
 async function clearAllOutboxNow_(){
   try {
-    if (window.__OFFLINE__ && typeof window.__OFFLINE__.clearQueue === "function") {
+    if (window.__OFFLINE__ && typeof window.__OFFLINE__.hardResetOfflineState === "function") {
+      await window.__OFFLINE__.hardResetOfflineState();
+    } else if (window.__OFFLINE__ && typeof window.__OFFLINE__.clearQueue === "function") {
       await window.__OFFLINE__.clearQueue();
     }
   } catch (e) {
-    console.warn("clearQueue failed:", e);
+    console.warn("offline hard reset failed:", e);
   }
+
+  try {
+    Object.keys(localStorage).forEach((k) => {
+      if (String(k || "").startsWith("__UFRP_ACTIVE_OUTBOX__:")) {
+        localStorage.removeItem(k);
+      }
+    });
+  } catch (_) {}
 
   try { setActiveOutboxRegistry_([]); } catch (_) {}
   try { setRecentOutboxBridge_([]); } catch (_) {}
+  try { sessionStorage.removeItem("__UFRP_RECENT_OUTBOX__"); } catch (_) {}
 
   try {
     __OUTBOX_CURRENT_ITEMS__ = [];
@@ -1601,7 +1641,10 @@ async function clearAllOutboxNow_(){
   } catch (_) {}
 
   try { showToast_("صف ارسال پاک شد"); } catch (_) {}
-  try { await updateOutboxChip(); } catch (_) {}
+
+  setTimeout(() => {
+    try { location.reload(); } catch (_) {}
+  }, 450);
 }
 
 window.__UFRP_CLEAR_ALL_OUTBOX__ = clearAllOutboxNow_;

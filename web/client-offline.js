@@ -441,8 +441,41 @@
         tx.objectStore(STORE).clear();
         tx.objectStore(BLOBS).clear();
 
-        tx.oncomplete = () => resolve(true);
-        tx.onerror = () => reject(tx.error || new Error("CLEAR_QUEUE_FAILED"));
+        tx.oncomplete = () => {
+          try { db.close(); } catch (_) {}
+          resolve(true);
+        };
+        tx.onerror = () => {
+          try { db.close(); } catch (_) {}
+          reject(tx.error || new Error("CLEAR_QUEUE_FAILED"));
+        };
+      });
+    },
+
+    hardResetOfflineState: async function () {
+      const db = await openDB();
+      const storeNames = Array.from(db.objectStoreNames || []);
+
+      return await new Promise((resolve, reject) => {
+        if (!storeNames.length) {
+          try { db.close(); } catch (_) {}
+          resolve(true);
+          return;
+        }
+
+        const tx = db.transaction(storeNames, "readwrite");
+        storeNames.forEach((name) => {
+          try { tx.objectStore(name).clear(); } catch (_) {}
+        });
+
+        tx.oncomplete = () => {
+          try { db.close(); } catch (_) {}
+          resolve(true);
+        };
+        tx.onerror = () => {
+          try { db.close(); } catch (_) {}
+          reject(tx.error || new Error("HARD_RESET_OFFLINE_STATE_FAILED"));
+        };
       });
     },
 
