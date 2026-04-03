@@ -1967,11 +1967,10 @@ async function checkForRequiredAppUpdateOnMenuLoad_(){
 
     const msg =
       String(res?.message || "").trim() ||
-      "نسخه جدید برنامه آماده است. برنامه اکنون بروزرسانی می‌شود.";
-    const delayMs = Math.max(0, Number(res?.delayMs || 1400));
+      "نسخه جدید برنامه شناسایی شد. برنامه در حال بروزرسانی خودکار است";
+    const delayMs = Math.max(0, Number(res?.delayMs || 1800));
 
-    try { showToast_(msg); } catch (_) {}
-    try { setStatus(msg, false); } catch (_) {}
+    try { setStatus(msg, true); } catch (_) {}
 
     setTimeout(() => {
       try { refreshAppNow_(); } catch (_) {}
