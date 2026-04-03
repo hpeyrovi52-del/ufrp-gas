@@ -4717,13 +4717,61 @@ async function appInit(){
       window.__UFRP_PREFETCH_RUNNING__ = true;
 
       const forceRefresh = !!window.__UFRP_FORCE_CACHE_REFRESH__;
+      const manifestKey = "__UFRP_PREFETCH_MANIFEST__";
+      const currentEmail = String(APP.email || "").trim().toLowerCase();
+      const sortedKeys = Array.from(new Set(keys.map(k => String(k || "").trim()).filter(Boolean))).sort();
+      const currentKeyset = JSON.stringify(sortedKeys);
 
-      console.log(
-        forceRefresh
-          ? "Full prefetch starting after explicit refresh ✅ forms ="
-          : "Missing-cache prefetch starting ✅ forms =",
-        keys.length
-      );
+      const readManifest_ = () => {
+        try {
+          const raw = localStorage.getItem(manifestKey);
+          const x = raw ? JSON.parse(raw) : null;
+          return x && typeof x === "object" ? x : null;
+        } catch (_) {
+          return null;
+        }
+      };
+
+      const writeManifest_ = () => {
+        try {
+          localStorage.setItem(manifestKey, JSON.stringify({
+            email: currentEmail,
+            keyset: currentKeyset,
+            updatedAt: new Date().toISOString()
+          }));
+        } catch (_) {}
+      };
+
+      const hasBundleCache_ = async (k) => {
+        try {
+          const raw = localStorage.getItem("__UFRP_BUNDLE_CACHE__:" + k);
+          const cached = raw ? JSON.parse(raw) : null;
+          const data = cached && cached.data ? cached.data : null;
+          if (data && data.ok) return true;
+        } catch (_) {}
+
+        try {
+          if (window.__OFFLINE__ && typeof window.__OFFLINE__.cacheGet === "function") {
+            const idbCached = await window.__OFFLINE__.cacheGet("bundle:" + k);
+            const idbData = idbCached && idbCached.data ? idbCached.data : null;
+            if (idbData && idbData.ok) return true;
+          }
+        } catch (_) {}
+
+        return false;
+      };
+
+      const hasOptionsCache_ = async (k) => {
+        try {
+          if (window.__OFFLINE__ && typeof window.__OFFLINE__.cacheGet === "function") {
+            const idbCached = await window.__OFFLINE__.cacheGet("options:" + k);
+            const idbData = idbCached && idbCached.data ? idbCached.data : null;
+            if (idbData && Array.isArray(idbData.rows)) return true;
+          }
+        } catch (_) {}
+
+        return false;
+      };
 
       setTimeout(async () => {
         let ok = 0, fail = 0, skipped = 0;
@@ -4735,80 +4783,49 @@ async function appInit(){
             return;
           }
 
-          const hasBundleCache_ = async (k) => {
-            try {
-              const raw = localStorage.getItem("__UFRP_BUNDLE_CACHE__:" + k);
-              const cached = raw ? JSON.parse(raw) : null;
-              const data = cached && cached.data ? cached.data : null;
-              if (data && data.ok) return true;
-            } catch (_) {}
+          const manifest = readManifest_();
+          const sameManifest =
+            !!manifest &&
+            String(manifest.email || "").trim().toLowerCase() === currentEmail &&
+            String(manifest.keyset || "") === currentKeyset;
 
-            try {
-              if (window.__OFFLINE__ && typeof window.__OFFLINE__.cacheGet === "function") {
-                const idbCached = await window.__OFFLINE__.cacheGet("bundle:" + k);
-                const idbData = idbCached && idbCached.data ? idbCached.data : null;
-                if (idbData && idbData.ok) return true;
-              }
-            } catch (_) {}
-
-            return false;
-          };
-
-          const hasOptionsCache_ = async (k) => {
-            try {
-              if (window.__OFFLINE__ && typeof window.__OFFLINE__.cacheGet === "function") {
-                const idbCached = await window.__OFFLINE__.cacheGet("options:" + k);
-                const idbData = idbCached && idbCached.data ? idbCached.data : null;
-                if (idbData && Array.isArray(idbData.rows)) return true;
-              }
-            } catch (_) {}
-
-            return false;
-          };
-
-          let targetKeys = [];
-
-          for (const k of keys) {
-            if (!navigator.onLine) {
-              console.warn("Prefetch stopped (went offline) ⚠️");
-              break;
-            }
-
-            if (forceRefresh) {
-              targetKeys.push(k);
-              continue;
-            }
-
+          let allCached = true;
+          for (const k of sortedKeys) {
             const [hasBundle, hasOptions] = await Promise.all([
               hasBundleCache_(k),
               hasOptionsCache_(k)
             ]);
-
-            if (hasBundle && hasOptions) {
-              skipped++;
-              continue;
+            if (!(hasBundle && hasOptions)) {
+              allCached = false;
+              break;
             }
-
-            targetKeys.push(k);
           }
 
-          const priorityKey = String(window.__UFRP_PREFETCH_PRIORITY_KEY__ || "").trim();
-          if (priorityKey) {
-            targetKeys.sort((a, b) => {
-              if (a === priorityKey && b !== priorityKey) return -1;
-              if (b === priorityKey && a !== priorityKey) return 1;
-              return 0;
-            });
+          const shouldFullPrefetch =
+            forceRefresh ||
+            !sameManifest ||
+            !allCached;
+
+          if (!shouldFullPrefetch) {
+            skipped = sortedKeys.length;
+            console.log("Prefetch skipped (cache complete and form set unchanged) ✅", sortedKeys.length);
+            writeManifest_();
+            return;
           }
 
           console.log(
-            "Prefetch target forms ✅ count =",
-            targetKeys.length,
-            "skipped =",
-            skipped,
-            "force =",
             forceRefresh
+              ? "Full prefetch starting after explicit refresh ✅ forms ="
+              : "Full prefetch starting to repair cache / sync form set ✅ forms =",
+            sortedKeys.length
           );
+
+          const priorityKey = String(window.__UFRP_PREFETCH_PRIORITY_KEY__ || "").trim();
+          const targetKeys = sortedKeys.slice().sort((a, b) => {
+            if (a === priorityKey && b !== priorityKey) return -1;
+            if (b === priorityKey && a !== priorityKey) return 1;
+            return 0;
+          });
 
           for (const k of targetKeys) {
             if (!navigator.onLine) {
@@ -4874,6 +4891,25 @@ async function appInit(){
             }
 
             await new Promise(r => setTimeout(r, 150));
+          }
+
+          let allCachedAfter = true;
+          for (const k of sortedKeys) {
+            const [hasBundle, hasOptions] = await Promise.all([
+              hasBundleCache_(k),
+              hasOptionsCache_(k)
+            ]);
+            if (!(hasBundle && hasOptions)) {
+              allCachedAfter = false;
+              break;
+            }
+          }
+
+          if (allCachedAfter) {
+            writeManifest_();
+            console.log("Prefetch manifest updated ✅");
+          } else {
+            console.warn("Prefetch manifest not updated because cache is still incomplete ⚠️");
           }
 
         } catch (e) {
