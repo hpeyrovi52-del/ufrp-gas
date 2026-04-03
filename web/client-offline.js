@@ -499,6 +499,14 @@
     setSyncHandler: function (fn) {
       syncHandler = fn;
       console.log("setSyncHandler registered (idb v1)");
+
+      try {
+        if (navigator.onLine) {
+          setTimeout(() => {
+            try { scheduleAutoFlush(); } catch (_) {}
+          }, 350);
+        }
+      } catch (_) {}
     }
   };
 

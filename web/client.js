@@ -1023,6 +1023,7 @@ async function syncActiveOutboxRegistry_(){
   }
 
   if (!activeItems.length) {
+    setActiveOutboxRegistry_([]);
     __OUTBOX_CURRENT_ITEMS__ = [];
     return [];
   }
@@ -1099,6 +1100,15 @@ async function syncActiveOutboxRegistry_(){
     item.hasReachedServerStage =
       !!(prevActive?.hasReachedServerStage) ||
       stageRank >= outboxStageRank_("server_to_google_queue");
+
+    if (
+      !item.hasReachedServerStage &&
+      !localNow &&
+      !serverNow
+    ) {
+      removeActiveOutboxItem_(key);
+      continue;
+    }
 
     if (
       item.hasReachedServerStage &&
@@ -1396,6 +1406,7 @@ async function updateOutboxChip(){
     (latestLocal.length ? latestLocal : []);
 
   if (!finalItems.length) {
+    setActiveOutboxRegistry_([]);
     __OUTBOX_CURRENT_ITEMS__ = [];
     __OUTBOX_LAST_RENDERED_ITEMS__ = [];
     chip.style.display = "none";
