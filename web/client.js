@@ -3525,6 +3525,101 @@ function showValidationToast_(msg){
   }, 3600);
 }
 
+
+let __UFRP_TEXT_FIELD_VISIBILITY_TICK__ = 0;
+
+function isKeyboardAwareTextControl_(el){
+  return !!(
+    el &&
+    el.matches &&
+    (
+      el.matches('textarea') ||
+      el.matches('input[type="text"]:not(.sdInput):not([readonly])')
+    )
+  );
+}
+
+function ensureFocusedTextControlVisible_(){
+  const active = document.activeElement;
+  const scrollArea = document.getElementById("scrollArea");
+  if (!scrollArea || !isKeyboardAwareTextControl_(active)) return;
+
+  const fieldEl = active.closest(".field");
+  if (!fieldEl) return;
+
+  try {
+    const scrollRect = scrollArea.getBoundingClientRect();
+    const fieldRect = fieldEl.getBoundingClientRect();
+    const inputRect = active.getBoundingClientRect();
+
+    const viewportHeight = Number(window.visualViewport?.height || window.innerHeight || 0);
+    const visibleBottom = Math.min(scrollRect.bottom, viewportHeight || scrollRect.bottom) - 12;
+    const visibleTop = scrollRect.top + 12;
+
+    let targetTop = scrollArea.scrollTop;
+
+    // First: make sure the actual input box is above the keyboard
+    if (inputRect.bottom > visibleBottom) {
+      targetTop += (inputRect.bottom - visibleBottom);
+    }
+
+    // Then: make sure the field title/card is not cut off at the top
+    const projectedFieldTop = fieldRect.top - (targetTop - scrollArea.scrollTop);
+    if (projectedFieldTop < visibleTop) {
+      targetTop += (projectedFieldTop - visibleTop);
+    }
+
+    const maxScrollTop = Math.max(0, scrollArea.scrollHeight - scrollArea.clientHeight);
+    targetTop = Math.max(0, Math.min(maxScrollTop, targetTop));
+
+    scrollArea.scrollTop = targetTop;
+  } catch (_) {}
+}
+
+function scheduleFocusedTextControlVisibility_(){
+  const myTick = ++__UFRP_TEXT_FIELD_VISIBILITY_TICK__;
+  const run = () => {
+    if (myTick !== __UFRP_TEXT_FIELD_VISIBILITY_TICK__) return;
+    ensureFocusedTextControlVisible_();
+  };
+
+  [0, 90, 180, 320, 520, 820, 1200].forEach(ms => setTimeout(run, ms));
+}
+
+function bindKeyboardAwareFocusedFieldVisibility_(){
+  if (window.__UFRP_TEXT_FIELD_VISIBILITY_BOUND__) return;
+  window.__UFRP_TEXT_FIELD_VISIBILITY_BOUND__ = true;
+
+  const scheduleIfNeeded = (target) => {
+    if (isKeyboardAwareTextControl_(target || document.activeElement)) {
+      scheduleFocusedTextControlVisibility_();
+    }
+  };
+
+  document.addEventListener("focusin", (e) => {
+    scheduleIfNeeded(e.target);
+  }, true);
+
+  document.addEventListener("input", (e) => {
+    scheduleIfNeeded(e.target);
+  }, true);
+
+  document.addEventListener("click", (e) => {
+    scheduleIfNeeded(e.target);
+  }, true);
+
+  const onViewportChange = () => {
+    scheduleIfNeeded(document.activeElement);
+  };
+
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", onViewportChange);
+    window.visualViewport.addEventListener("scroll", onViewportChange);
+  }
+
+  window.addEventListener("resize", onViewportChange);
+}
+
 function focusNextQuestionField_(currentFieldId){
   const root = document.getElementById("dynForm");
   const scrollArea = document.getElementById("scrollArea");
@@ -3564,7 +3659,7 @@ function focusNextQuestionField_(currentFieldId){
       fieldEl &&
       fieldEl.querySelector &&
       (
-        fieldEl.querySelector('input[type="text"]:not(.sdInput)') ||
+        fieldEl.querySelector('input[type="text"]:not(.sdInput):not([readonly])') ||
         fieldEl.querySelector("textarea")
       )
     );
@@ -3613,44 +3708,6 @@ function focusNextQuestionField_(currentFieldId){
     } catch (_) {}
   };
 
-  const adjustTextEntryFieldAfterKeyboard_ = (fieldEl, inputEl) => {
-    if (!fieldEl || !scrollArea || !inputEl) return;
-
-    try {
-      const rowRect = fieldEl.getBoundingClientRect();
-      const inputRect = inputEl.getBoundingClientRect();
-      const scrollRect = scrollArea.getBoundingClientRect();
-      const fixedHeader = document.getElementById("fixedHeaderArea");
-      const baseHeaderOffset = Math.max(18, Math.min(42, Number(fixedHeader?.offsetHeight || 0) * 0.2));
-
-      const viewportHeight = Number(window.visualViewport?.height || window.innerHeight || 0);
-      const keyboardInset = Math.max(0, Number(window.innerHeight || 0) - viewportHeight);
-      const effectiveBottom = Math.min(scrollRect.bottom, viewportHeight || scrollRect.bottom) - Math.max(18, keyboardInset + 10);
-
-      const desiredTopEdge = scrollRect.top + baseHeaderOffset + 18;
-      const desiredInputBottom = effectiveBottom - 18;
-
-      let targetTop = scrollArea.scrollTop;
-
-      if (rowRect.top < desiredTopEdge) {
-        targetTop += rowRect.top - desiredTopEdge;
-      }
-
-      const projectedInputBottom = inputRect.bottom - (targetTop - scrollArea.scrollTop);
-      if (projectedInputBottom > desiredInputBottom) {
-        targetTop += projectedInputBottom - desiredInputBottom;
-      }
-
-      const maxScrollableTop = Math.max(0, scrollArea.scrollHeight - scrollArea.clientHeight);
-      targetTop = Math.max(0, Math.min(maxScrollableTop, targetTop));
-
-      scrollArea.scrollTo({
-        top: Math.max(0, targetTop),
-        behavior: "smooth"
-      });
-    } catch (_) {}
-  };
-
   for (let i = idx + 1; i < fieldRows.length; i++) {
     const nextField = fieldRows[i];
     const target = getFocusableForField(nextField);
@@ -3666,24 +3723,10 @@ function focusNextQuestionField_(currentFieldId){
     setTimeout(() => {
       try {
         if (typeof target.focus === "function") {
-          if (dropdownField) {
-            try {
-              target.focus({ preventScroll: true });
-            } catch (_) {
-              target.focus();
-            }
-          } else if (textEntryField) {
-            try {
-              target.focus({ preventScroll: true });
-            } catch (_) {
-              target.focus();
-            }
-          } else {
-            try {
-              target.focus({ preventScroll: true });
-            } catch (_) {
-              target.focus();
-            }
+          try {
+            target.focus({ preventScroll: true });
+          } catch (_) {
+            target.focus();
           }
         }
       } catch (_) {}
@@ -3692,16 +3735,14 @@ function focusNextQuestionField_(currentFieldId){
         setTimeout(() => scrollDropdownFieldIntoViewWithinApp_(nextField), 120);
         setTimeout(() => scrollDropdownFieldIntoViewWithinApp_(nextField), 420);
       } else if (textEntryField) {
-        setTimeout(() => adjustTextEntryFieldAfterKeyboard_(nextField, target), 120);
-        setTimeout(() => adjustTextEntryFieldAfterKeyboard_(nextField, target), 280);
-        setTimeout(() => adjustTextEntryFieldAfterKeyboard_(nextField, target), 520);
-        setTimeout(() => adjustTextEntryFieldAfterKeyboard_(nextField, target), 900);
+        scheduleFocusedTextControlVisibility_();
       }
-    }, dropdownField ? 260 : 120);
+    }, dropdownField ? 260 : 80);
 
     break;
   }
 }
+
 
 function focusMissingField_(miss){
   const fieldId = String(miss?.fieldId || "").trim();
@@ -4862,6 +4903,7 @@ function safeBoot() {
   try {
     bindPickerDom();
     bindAppRefreshUI_();
+    bindKeyboardAwareFocusedFieldVisibility_();
   } catch (e) {
     console.error("Client boot error:", e);
     try { setStatus("خطای داخلی در کلاینت", false); } catch (_) {}
