@@ -1756,6 +1756,83 @@ function renderMenu(menu){
   });
 }
 
+async function persistMenuCache_(menuRes){
+  try {
+    if (!(menuRes && menuRes.ok)) return false;
+
+    const payload = {
+      savedAt: new Date().toISOString(),
+      data: menuRes
+    };
+
+    try {
+      localStorage.setItem("__UFRP_MENU_CACHE__", JSON.stringify(payload));
+      console.log("Menu cached (localStorage) ✅");
+    } catch (e) {
+      console.warn("Menu localStorage cache failed:", e);
+    }
+
+    try {
+      if (window.__OFFLINE__ && typeof window.__OFFLINE__.cachePut === "function") {
+        await window.__OFFLINE__.cachePut("menu:main", "menu", payload);
+        console.log("Menu cached (IndexedDB) ✅");
+      }
+    } catch (e) {
+      console.warn("Menu IndexedDB cache failed:", e);
+    }
+
+    return true;
+  } catch (e) {
+    console.warn("persistMenuCache_ failed:", e);
+    return false;
+  }
+}
+
+async function tryReadCachedMenu_(restoreSessionToo){
+  let data = null;
+
+  try {
+    const raw = localStorage.getItem("__UFRP_MENU_CACHE__");
+    const cached = raw ? JSON.parse(raw) : null;
+    data = cached && cached.data ? cached.data : null;
+  } catch (e) {
+    console.warn("Menu localStorage read failed:", e);
+  }
+
+  if (!(data && data.ok)) {
+    try {
+      if (window.__OFFLINE__ && typeof window.__OFFLINE__.cacheGet === "function") {
+        const idbCached = await window.__OFFLINE__.cacheGet("menu:main");
+        const idbData = idbCached && idbCached.data ? idbCached.data : null;
+
+        if (idbData && idbData.data && idbData.data.ok) {
+          data = idbData.data;
+        } else if (idbData && idbData.ok) {
+          data = idbData;
+        }
+      }
+    } catch (e) {
+      console.warn("Menu IndexedDB read failed:", e);
+    }
+  }
+
+  if (data && data.ok && restoreSessionToo) {
+    try {
+      if (navigator.onLine && data.email) {
+        await gsCall("session_set", {
+          email: data.email,
+          fullName: data.fullName || ""
+        });
+        console.log("Session restored from cached menu ✅", data.email);
+      }
+    } catch (e) {
+      console.warn("Session restore from cached menu failed:", e);
+    }
+  }
+
+  return (data && data.ok) ? data : null;
+}
+
 let __UFRP_PREFETCH_HIDE_TIMER__ = null;
 let __UFRP_PREFETCH_MENU_PHASE__ = false;
 let __UFRP_PREFETCH_MENU_TIMER__ = null;
@@ -4730,48 +4807,31 @@ async function appInit(){
   let res;
   const sessionMenuFresh = sessionStorage.getItem("__UFRP_SESSION_MENU_REFRESHED__") === "1";
 
-  async function tryReadCachedMenu_(restoreSessionToo){
-    try {
-      const raw = localStorage.getItem("__UFRP_MENU_CACHE__");
-      const cached = raw ? JSON.parse(raw) : null;
-      const data = cached && cached.data ? cached.data : null;
-
-      if (!(data && data.ok)) return null;
-
-      if (restoreSessionToo) {
-        try {
-          if (data.email && navigator.onLine) {
-            await gsCall("session_set", {
-              email: data.email,
-              fullName: data.fullName || ""
-            });
-            console.log("Session restored from cached menu ✅", data.email);
-          }
-        } catch (e) {
-          console.warn("Session restore from cached menu failed:", e);
-        }
-      }
-
-      return data;
-    } catch (e) {
-      console.warn("Cached menu read failed:", e);
-      return null;
-    }
-  }
-
   if (sessionMenuFresh) {
-    res = await tryReadCachedMenu_(true);
-    if (res) {
-      console.log("Using session-fresh cached menu ✅");
+    try {
+      const data = await tryReadCachedMenu_(true);
+
+      if (data && data.ok) {
+        res = data;
+        console.log("Using session-fresh cached menu ✅");
+      }
+    } catch (e) {
+      console.warn("Session-fresh menu read failed:", e);
     }
   }
 
   if (!res) try {
     if (!navigator.onLine) {
-      throw new Error("__OFFLINE__");
+      const cachedMenu = await tryReadCachedMenu_(false);
+      if (cachedMenu && cachedMenu.ok) {
+        console.warn("Using cached menu before network fetch (offline) ✅");
+        res = cachedMenu;
+      } else {
+        throw new Error("__OFFLINE__");
+      }
     }
 
-    const sess = await gsCall("session_get");
+    const sess = (!res && navigator.onLine) ? await gsCall("session_get") : null;
 
     if (sess && sess.ok && sess.user && sess.user.email) {
       res = await fetch("/api/menu.php", {
@@ -4781,14 +4841,7 @@ async function appInit(){
       }).then(r => r.json());
 
       try {
-        localStorage.setItem(
-          "__UFRP_MENU_CACHE__",
-          JSON.stringify({
-            savedAt: new Date().toISOString(),
-            data: res
-          })
-        );
-        console.log("Menu cached ✅");
+        await persistMenuCache_(res);
       } catch (cacheErr) {
         console.warn("Menu cache failed:", cacheErr);
       }
@@ -4822,10 +4875,7 @@ async function appInit(){
             }).then(r => r.json());
 
             try {
-              localStorage.setItem("__UFRP_MENU_CACHE__", JSON.stringify({
-                savedAt: new Date().toISOString(),
-                data: res
-              }));
+              await persistMenuCache_(res);
 
               sessionStorage.setItem("__UFRP_SESSION_MENU_REFRESHED__", "1");
               console.log("Menu cached ✅");
@@ -4862,12 +4912,19 @@ async function appInit(){
   } catch (e) {
     console.warn("Menu fetch failed. Trying cache...", e);
 
-    const cachedMenu = await tryReadCachedMenu_(false);
-    if (cachedMenu && cachedMenu.ok) {
-      console.warn("Using cached menu (offline/fallback) ✅");
-      res = cachedMenu;
-    } else {
-      setStatus("خطا در دریافت منو (کش موجود نیست)", false);
+    try {
+      const data = await tryReadCachedMenu_(false);
+
+      if (data && data.ok) {
+        console.warn("Using cached menu (offline/fallback) ✅");
+        res = data;
+      } else {
+        setStatus("خطا در دریافت منو (کش موجود نیست)", false);
+        return;
+      }
+    } catch (err) {
+      console.error(err);
+      setStatus("خطا در دریافت منو (خواندن کش ناموفق بود)", false);
       return;
     }
   }
