@@ -3029,8 +3029,40 @@ function renderDynamicForm(schema, optionsRows){
         const otherInput = row.querySelector(`#${fieldId}__other`);
         const hiddenVal = row.querySelector(`#${fieldId}__value`);
         const radios = wrap ? Array.from(wrap.querySelectorAll(`input[type="radio"][name="${fieldId}__radio"]`)) : [];
+        const isAutoEqualShareField = isAutoEqualShareTitle_(title);
 
-        const setFinalValue = (v) => { if (hiddenVal) hiddenVal.value = String(v || "").trim(); };
+        const normalizeShareDigits_ = (v) => stripToDigits(String(v || "").trim());
+
+        const setFinalValue = (v) => {
+          if (!hiddenVal) return;
+          hiddenVal.value = isAutoEqualShareField
+            ? normalizeShareDigits_(v)
+            : String(v || "").trim();
+        };
+
+        const syncShareOtherInput_ = () => {
+          if (!otherInput || !isAutoEqualShareField) return;
+          const digits = normalizeShareDigits_(otherInput.value);
+          otherInput.value = toFaDigits(digits);
+          return digits;
+        };
+
+        if (otherInput && isAutoEqualShareField) {
+          otherInput.inputMode = "numeric";
+          otherInput.autocomplete = "off";
+          otherInput.spellcheck = false;
+
+          otherInput.addEventListener("paste", (e) => {
+            e.preventDefault();
+            const txt = (e.clipboardData || window.clipboardData).getData("text");
+            otherInput.value = toFaDigits(normalizeShareDigits_(txt));
+            const picked = radios.find(r => r.checked);
+            const pickedVal = picked ? String(picked.value || "").trim() : "";
+            if (pickedVal === OTHER_LABEL) {
+              setFinalValue(otherInput.value);
+            }
+          });
+        }
 
         const updateFromState = () => {
           const picked = radios.find(r => r.checked);
@@ -3039,7 +3071,8 @@ function renderDynamicForm(schema, optionsRows){
           if (pickedVal === OTHER_LABEL){
             if (otherInput){
               otherInput.style.display = "block";
-              setFinalValue(otherInput.value);
+              const digits = syncShareOtherInput_();
+              setFinalValue(isAutoEqualShareField ? digits : otherInput.value);
             } else {
               setFinalValue("");
             }
@@ -3064,7 +3097,8 @@ function renderDynamicForm(schema, optionsRows){
             const picked = radios.find(r => r.checked);
             const pickedVal = picked ? String(picked.value || "").trim() : "";
             if (pickedVal === OTHER_LABEL){
-              setFinalValue(otherInput.value);
+              const digits = syncShareOtherInput_();
+              setFinalValue(isAutoEqualShareField ? digits : otherInput.value);
             }
           });
         }
