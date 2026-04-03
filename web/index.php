@@ -1464,18 +1464,21 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
     <div class="toast" id="toast">✅ انجام شد</div>
 
     <!-- =====================================================
-         SERVICE WORKER DEBUG BLOCK
-         NOTE:
-         - Kept unchanged from your current file
-         - Still unregisters service workers for debugging
+         SERVICE WORKER APP-SHELL CACHE
          ===================================================== -->
     <script>
       if ("serviceWorker" in navigator) {
-        navigator.serviceWorker.getRegistrations().then((regs) => {
-          regs.forEach((reg) => reg.unregister());
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("/sw.js")
+            .then((reg) => {
+              console.log("SW registered ✅", reg.scope || "");
+              try { reg.update(); } catch (_) {}
+            })
+            .catch((err) => {
+              console.warn("SW registration failed:", err);
+            });
         });
       }
-      console.log("SW unregistration forced for debugging");
     </script>
 
     <!-- =====================================================
