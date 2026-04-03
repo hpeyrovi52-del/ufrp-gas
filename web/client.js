@@ -4001,6 +4001,7 @@ function hideAppRefreshModal_(){
 }
 
 function refreshAppNow_(){
+  try { localStorage.setItem("__UFRP_FORCE_CACHE_REFRESH__", "1"); } catch (_) {}
   try { hideAppRefreshModal_(); } catch (_) {}
   try { setStatus("در حال بروزرسانی...", true); } catch (_) {}
 
@@ -4308,6 +4309,14 @@ window.submitForm = async function submitForm(){
  * ========================================================= */
 async function appInit(){
 
+  let forceRefresh = false;
+  try {
+    forceRefresh = localStorage.getItem("__UFRP_FORCE_CACHE_REFRESH__") === "1";
+    localStorage.removeItem("__UFRP_FORCE_CACHE_REFRESH__");
+  } catch (_) {}
+
+  window.__UFRP_PREFETCH_RESTORED_FROM_MANIFEST__ = false;
+
   try {
     sessionStorage.removeItem("__UFRP_SESSION_MENU_REFRESHED__");
 
@@ -4319,6 +4328,42 @@ async function appInit(){
         sessionStorage.removeItem(k);
       }
     });
+
+    if (forceRefresh) {
+      try { localStorage.removeItem("__UFRP_PREFETCH_MANIFEST__"); } catch (_) {}
+      console.log("Explicit refresh requested — persistent prefetch manifest cleared ✅");
+    } else {
+      const raw = localStorage.getItem("__UFRP_PREFETCH_MANIFEST__");
+      const manifest = raw ? JSON.parse(raw) : null;
+
+      const manifestEmail = String(manifest?.userEmail || "").trim().toLowerCase();
+      const currentUserEmail = String(window.__UFRP_USER_EMAIL__ || "").trim().toLowerCase();
+
+      const formKeys = Array.isArray(manifest?.formKeys)
+        ? Array.from(new Set(
+            manifest.formKeys
+              .map(k => String(k || "").trim())
+              .filter(Boolean)
+          ))
+        : [];
+
+      if (
+        manifest &&
+        manifest.complete === true &&
+        manifestEmail &&
+        manifestEmail === currentUserEmail
+      ) {
+        sessionStorage.setItem("__UFRP_SESSION_MENU_REFRESHED__", "1");
+
+        formKeys.forEach(k => {
+          sessionStorage.setItem("__UFRP_SESSION_BUNDLE_REFRESHED__:" + k, "1");
+          sessionStorage.setItem("__UFRP_SESSION_OPTIONS_REFRESHED__:" + k, "1");
+        });
+
+        window.__UFRP_PREFETCH_RESTORED_FROM_MANIFEST__ = true;
+        console.log("Prefetch manifest restored ✅", formKeys.length);
+      }
+    }
   } catch (_) {}
 
   updateOnlineIndicator();
@@ -4848,6 +4893,11 @@ async function appInit(){
         return;
       }
 
+      if (window.__UFRP_PREFETCH_RESTORED_FROM_MANIFEST__) {
+        console.log("Prefetch skipped (persistent cache manifest restored) ✅");
+        return;
+      }
+
       if (window.__UFRP_PREFETCH_RUNNING__) return;
       window.__UFRP_PREFETCH_RUNNING__ = true;
 
@@ -4952,6 +5002,22 @@ async function appInit(){
         } catch (e) {
           console.warn("Prefetch bootstrap failed:", e?.message || e);
         } finally {
+          try {
+            if (fail === 0 && doneCount === keys.length) {
+              localStorage.setItem("__UFRP_PREFETCH_MANIFEST__", JSON.stringify({
+                complete: true,
+                userEmail: String(APP.email || window.__UFRP_USER_EMAIL__ || "").trim().toLowerCase(),
+                formKeys: keys.map(k => String(k || "").trim()).filter(Boolean),
+                updatedAt: new Date().toISOString()
+              }));
+              console.log("Prefetch manifest saved ✅", keys.length);
+            } else {
+              localStorage.removeItem("__UFRP_PREFETCH_MANIFEST__");
+            }
+          } catch (manifestErr) {
+            console.warn("Prefetch manifest write failed:", manifestErr);
+          }
+
           finishPrefetchProgress_(ok, fail, keys.length);
           console.log("Prefetch finished ✅ ok =", ok, "fail =", fail);
           window.__UFRP_PREFETCH_RUNNING__ = false;
