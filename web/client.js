@@ -287,6 +287,23 @@ function bindAutoEqualShareGroup_(root){
   const rows = Array.from((root || document).querySelectorAll('.field[data-auto-equal-share="1"]'));
   if (rows.length < 2) return;
 
+  function resetShareRow_(row){
+    const fieldId = String(row?.dataset?.autoEqualFieldId || "").trim();
+    if (!fieldId) return;
+
+    const radios = Array.from(row.querySelectorAll(`input[name="${fieldId}__radio"]`));
+    radios.forEach((r) => { r.checked = false; });
+
+    const hiddenVal = row.querySelector(`#${fieldId}__value`);
+    if (hiddenVal) hiddenVal.value = "";
+
+    const otherInput = row.querySelector(`#${fieldId}__other`);
+    if (otherInput) {
+      otherInput.style.display = "none";
+      otherInput.value = "";
+    }
+  }
+
   rows.forEach((row) => {
     if (row.dataset.autoEqualShareBound === "1") return;
     row.dataset.autoEqualShareBound = "1";
@@ -303,26 +320,35 @@ function bindAutoEqualShareGroup_(root){
         if (!radio.checked) return;
 
         const pickedVal = String(radio.value || "").trim();
-        if (pickedVal !== "مساوی") return;
 
         __UFRP_AUTO_EQUAL_SHARE_SYNCING__ = true;
         try {
-          rows.forEach((otherRow) => {
-            const otherFieldId = String(otherRow.dataset.autoEqualFieldId || "").trim();
-            if (!otherFieldId) return;
+          if (pickedVal === "مساوی") {
+            rows.forEach((otherRow) => {
+              const otherFieldId = String(otherRow.dataset.autoEqualFieldId || "").trim();
+              if (!otherFieldId) return;
 
-            const otherRadios = Array.from(
-              otherRow.querySelectorAll(`input[name="${otherFieldId}__radio"]`)
-            );
-            const equalRadio = otherRadios.find(
-              r => String(r.value || "").trim() === "مساوی"
-            );
+              const otherRadios = Array.from(
+                otherRow.querySelectorAll(`input[name="${otherFieldId}__radio"]`)
+              );
+              const equalRadio = otherRadios.find(
+                r => String(r.value || "").trim() === "مساوی"
+              );
 
-            if (equalRadio && !equalRadio.checked) {
-              equalRadio.checked = true;
-              equalRadio.dispatchEvent(new Event("change", { bubbles: true }));
-            }
-          });
+              if (equalRadio && !equalRadio.checked) {
+                equalRadio.checked = true;
+                equalRadio.dispatchEvent(new Event("change", { bubbles: true }));
+              }
+            });
+            return;
+          }
+
+          if (pickedVal === "سایر") {
+            rows.forEach((otherRow) => {
+              if (otherRow === row) return;
+              resetShareRow_(otherRow);
+            });
+          }
         } finally {
           __UFRP_AUTO_EQUAL_SHARE_SYNCING__ = false;
         }
