@@ -1456,22 +1456,70 @@ function stopOutboxLiveRefresh_(){
   } catch (_) {}
 }
 
-document.addEventListener("touchstart", (e) => {
-  const chip = document.getElementById("outboxChip");
-  if (!chip || !chip.contains(e.target)) return;
+let __OUTBOX_LONGPRESS_ACTIVE__ = false;
+let __OUTBOX_LONGPRESS_FIRED__ = false;
+let __OUTBOX_LONGPRESS_START_X__ = 0;
+let __OUTBOX_LONGPRESS_START_Y__ = 0;
 
+function cancelOutboxLongPress_(){
+  __OUTBOX_LONGPRESS_ACTIVE__ = false;
+  if (__outboxDebugTimer) {
+    clearTimeout(__outboxDebugTimer);
+    __outboxDebugTimer = null;
+  }
+}
+
+function beginOutboxLongPress_(e){
+  const chip = document.getElementById("outboxChip");
+  const panel = document.getElementById("outboxPanel");
+  const panelHeader = panel ? panel.querySelector(".outboxPanelHeader") : null;
+
+  const target = e.target instanceof Element ? e.target : null;
+  const onChip = !!(chip && target && chip.contains(target));
+  const onPanelHeader = !!(panelHeader && target && panelHeader.contains(target));
+
+  if (!onChip && !onPanelHeader) return;
+
+  __OUTBOX_LONGPRESS_ACTIVE__ = true;
+  __OUTBOX_LONGPRESS_FIRED__ = false;
+  __OUTBOX_LONGPRESS_START_X__ = Number(e.clientX || 0);
+  __OUTBOX_LONGPRESS_START_Y__ = Number(e.clientY || 0);
+
+  if (__outboxDebugTimer) clearTimeout(__outboxDebugTimer);
   __outboxDebugTimer = setTimeout(async () => {
     try {
+      __OUTBOX_LONGPRESS_FIRED__ = true;
       await clearAllOutboxNow_();
     } catch (err) {
       console.error(err);
+    } finally {
+      cancelOutboxLongPress_();
     }
   }, 4000);
-});
+}
 
-document.addEventListener("touchend", () => {
-  if (__outboxDebugTimer) clearTimeout(__outboxDebugTimer);
-});
+function moveOutboxLongPress_(e){
+  if (!__OUTBOX_LONGPRESS_ACTIVE__) return;
+
+  const dx = Math.abs(Number(e.clientX || 0) - __OUTBOX_LONGPRESS_START_X__);
+  const dy = Math.abs(Number(e.clientY || 0) - __OUTBOX_LONGPRESS_START_Y__);
+
+  if (dx > 12 || dy > 12) {
+    cancelOutboxLongPress_();
+  }
+}
+
+document.addEventListener("pointerdown", beginOutboxLongPress_, true);
+document.addEventListener("pointermove", moveOutboxLongPress_, true);
+document.addEventListener("pointerup", cancelOutboxLongPress_, true);
+document.addEventListener("pointercancel", cancelOutboxLongPress_, true);
+
+document.addEventListener("click", (e) => {
+  if (!__OUTBOX_LONGPRESS_FIRED__) return;
+  __OUTBOX_LONGPRESS_FIRED__ = false;
+  e.preventDefault();
+  e.stopPropagation();
+}, true);
 
 document.addEventListener("click", (e) => {
   const panel = document.getElementById("outboxPanel");
