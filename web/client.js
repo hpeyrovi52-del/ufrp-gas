@@ -1940,8 +1940,8 @@ function finalizeRequiredAppUpdateState_(){
 }
 
 async function checkForRequiredAppUpdateOnMenuLoad_(){
-  if (__UFRP_REQUIRED_UPDATE_RUNNING__) return;
-  if (!navigator.onLine) return;
+  if (__UFRP_REQUIRED_UPDATE_RUNNING__) return false;
+  if (!navigator.onLine) return false;
 
   try {
     const res = await fetch("/api/app-version.php", {
@@ -1955,9 +1955,9 @@ async function checkForRequiredAppUpdateOnMenuLoad_(){
     const serverBuild = String(res?.buildId || "").trim();
     const ackBuild = String(localStorage.getItem(__UFRP_ACK_BUILD_KEY__) || "").trim();
 
-    if (!enabled) return;
-    if (!currentBuild || !serverBuild) return;
-    if (ackBuild === serverBuild) return;
+    if (!enabled) return false;
+    if (!currentBuild || !serverBuild) return false;
+    if (ackBuild === serverBuild) return false;
 
     __UFRP_REQUIRED_UPDATE_RUNNING__ = true;
 
@@ -1975,8 +1975,11 @@ async function checkForRequiredAppUpdateOnMenuLoad_(){
     setTimeout(() => {
       try { refreshAppNow_(); } catch (_) {}
     }, delayMs);
+
+    return true;
   } catch (e) {
     console.warn("Required app update check failed:", e);
+    return false;
   }
 }
 
@@ -5303,6 +5306,11 @@ async function appInit(){
     console.log("[UFRP] after write #userFullName:", nameEl.textContent);
   }
 
+  const requiredUpdateScheduled = await checkForRequiredAppUpdateOnMenuLoad_();
+  if (requiredUpdateScheduled) {
+    return;
+  }
+
   renderMenu(APP.menu);
 
   if (window.__UFRP_PREFETCH_RESTORED_FROM_MANIFEST__) {
@@ -5312,10 +5320,6 @@ async function appInit(){
   }
 
   setStatus("", false);
-
-  Promise.resolve()
-    .then(() => checkForRequiredAppUpdateOnMenuLoad_())
-    .catch(() => {});
 
   /* =======================================================
    * PREFETCH REGISTRY
