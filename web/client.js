@@ -1462,16 +1462,7 @@ document.addEventListener("touchstart", (e) => {
 
   __outboxDebugTimer = setTimeout(async () => {
     try {
-      if (window.__OFFLINE__ && typeof window.__OFFLINE__.clearQueue === "function") {
-        const items = await window.__OFFLINE__.getQueue();
-        for (const it of items) {
-          if (window.__OFFLINE__.removeQueueItem) {
-            await window.__OFFLINE__.removeQueueItem(it.id);
-          }
-        }
-        alert("Queue cleared");
-        updateOutboxChip();
-      }
+      await clearAllOutboxNow_();
     } catch (err) {
       console.error(err);
     }
@@ -1529,13 +1520,52 @@ window.__UFRP_OUTBOX_SEED_ACTIVE__ = function (payload) {
   }
 };
 
+async function clearAllOutboxNow_(){
+  try {
+    if (window.__OFFLINE__ && typeof window.__OFFLINE__.clearQueue === "function") {
+      await window.__OFFLINE__.clearQueue();
+    }
+  } catch (e) {
+    console.warn("clearQueue failed:", e);
+  }
+
+  try { setActiveOutboxRegistry_([]); } catch (_) {}
+  try { setRecentOutboxBridge_([]); } catch (_) {}
+
+  try {
+    __OUTBOX_CURRENT_ITEMS__ = [];
+    __OUTBOX_LAST_RENDERED_ITEMS__ = [];
+  } catch (_) {}
+
+  try {
+    const chip = document.getElementById("outboxChip");
+    if (chip) {
+      chip.style.display = "none";
+      chip.classList.remove("pending", "error");
+    }
+  } catch (_) {}
+
+  try {
+    const panel = document.getElementById("outboxPanel");
+    if (panel) panel.classList.add("hidden");
+    window.__OUTBOX_PANEL_OPEN__ = false;
+    stopOutboxLiveRefresh_();
+  } catch (_) {}
+
+  try { showToast_("صف ارسال پاک شد"); } catch (_) {}
+  try { await updateOutboxChip(); } catch (_) {}
+}
+
+window.__UFRP_CLEAR_ALL_OUTBOX__ = clearAllOutboxNow_;
+
 window.OUTBOX = {
   add: outboxAdd,
   setStatus: outboxSetStatus,
   remove: outboxRemove,
   summary: outboxGetSummary,
   items: outboxGetItems,
-  refresh: updateOutboxChip
+  refresh: updateOutboxChip,
+  clearAll: clearAllOutboxNow_
 };
 
 setTimeout(updateOutboxChip, 0);
