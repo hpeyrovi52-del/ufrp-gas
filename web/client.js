@@ -4808,8 +4808,6 @@ async function appInit(){
         manifestEmail &&
         manifestEmail === currentUserEmail
       ) {
-        sessionStorage.setItem("__UFRP_SESSION_MENU_REFRESHED__", "1");
-
         formKeys.forEach(k => {
           sessionStorage.setItem("__UFRP_SESSION_BUNDLE_REFRESHED__:" + k, "1");
           sessionStorage.setItem("__UFRP_SESSION_OPTIONS_REFRESHED__:" + k, "1");
@@ -5154,22 +5152,8 @@ async function appInit(){
   setStatus("در حال بارگذاری", true);
 
   let res;
-  const sessionMenuFresh = sessionStorage.getItem("__UFRP_SESSION_MENU_REFRESHED__") === "1";
 
-  if (sessionMenuFresh) {
-    try {
-      const data = await tryReadCachedMenu_(true);
-
-      if (data && data.ok) {
-        res = data;
-        console.log("Using session-fresh cached menu ✅");
-      }
-    } catch (e) {
-      console.warn("Session-fresh menu read failed:", e);
-    }
-  }
-
-  if (!res) try {
+  try {
     if (!navigator.onLine) {
       const cachedMenu = await tryReadCachedMenu_(false);
       if (cachedMenu && cachedMenu.ok) {
@@ -5225,8 +5209,6 @@ async function appInit(){
 
             try {
               await persistMenuCache_(res);
-
-              sessionStorage.setItem("__UFRP_SESSION_MENU_REFRESHED__", "1");
               console.log("Menu cached ✅");
             } catch (cacheErr) {
               console.warn("Menu cache failed:", cacheErr);
