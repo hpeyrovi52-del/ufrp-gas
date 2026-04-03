@@ -1102,8 +1102,9 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
         min-height:34px;
         padding:7px 12px;
         border-radius:999px;
-        border:1px solid rgba(17,24,39,0.08);
-        background: rgba(17,24,39,0.05);
+        border:1px solid rgba(17,24,39,0.10);
+        background:#f8fafc;
+        box-shadow:0 1px 2px rgba(17,24,39,0.06);
         color: rgba(17,24,39,0.55);
         font-size:12px;
         font-weight:800;
@@ -1117,14 +1118,16 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
       }
 
       .prefetchChip.done{
-        border-color: rgba(17,24,39,0.08);
-        background: rgba(17,24,39,0.05);
+        border-color: rgba(17,24,39,0.10);
+        background:#f8fafc;
+        box-shadow:0 1px 2px rgba(17,24,39,0.06);
         color: rgba(17,24,39,0.55);
       }
 
       .prefetchChip.error{
-        border-color: rgba(17,24,39,0.08);
-        background: rgba(17,24,39,0.05);
+        border-color: rgba(17,24,39,0.10);
+        background:#f8fafc;
+        box-shadow:0 1px 2px rgba(17,24,39,0.06);
         color: rgba(17,24,39,0.55);
       }
 
