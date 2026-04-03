@@ -271,6 +271,66 @@ function makeSectionChip(title){
   return wrap;
 }
 
+const __UFRP_AUTO_EQUAL_SHARE_TITLES__ = new Set([
+  "درصد سهم خانم شمس",
+  "درصد سهم آقای ثابتی",
+  "درصد سهم آقای منصوری"
+].map(normFa));
+
+let __UFRP_AUTO_EQUAL_SHARE_SYNCING__ = false;
+
+function isAutoEqualShareTitle_(title){
+  return __UFRP_AUTO_EQUAL_SHARE_TITLES__.has(normFa(String(title || "")));
+}
+
+function bindAutoEqualShareGroup_(root){
+  const rows = Array.from((root || document).querySelectorAll('.field[data-auto-equal-share="1"]'));
+  if (rows.length < 2) return;
+
+  rows.forEach((row) => {
+    if (row.dataset.autoEqualShareBound === "1") return;
+    row.dataset.autoEqualShareBound = "1";
+
+    const fieldId = String(row.dataset.autoEqualFieldId || "").trim();
+    if (!fieldId) return;
+
+    const radios = Array.from(row.querySelectorAll(`input[name="${fieldId}__radio"]`));
+    if (!radios.length) return;
+
+    radios.forEach((radio) => {
+      radio.addEventListener("change", () => {
+        if (__UFRP_AUTO_EQUAL_SHARE_SYNCING__) return;
+        if (!radio.checked) return;
+
+        const pickedVal = String(radio.value || "").trim();
+        if (pickedVal !== "مساوی") return;
+
+        __UFRP_AUTO_EQUAL_SHARE_SYNCING__ = true;
+        try {
+          rows.forEach((otherRow) => {
+            const otherFieldId = String(otherRow.dataset.autoEqualFieldId || "").trim();
+            if (!otherFieldId) return;
+
+            const otherRadios = Array.from(
+              otherRow.querySelectorAll(`input[name="${otherFieldId}__radio"]`)
+            );
+            const equalRadio = otherRadios.find(
+              r => String(r.value || "").trim() === "مساوی"
+            );
+
+            if (equalRadio && !equalRadio.checked) {
+              equalRadio.checked = true;
+              equalRadio.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+          });
+        } finally {
+          __UFRP_AUTO_EQUAL_SHARE_SYNCING__ = false;
+        }
+      });
+    });
+  });
+}
+
 /* =========================================================
  * GLOBAL APP STATE
  * ========================================================= */
@@ -2911,6 +2971,11 @@ function renderDynamicForm(schema, optionsRows){
         const uiChoices = choices.slice();
         if (!uiChoices.some(x => String(x).trim() === OTHER_LABEL)) uiChoices.push(OTHER_LABEL);
 
+        if (isAutoEqualShareTitle_(title)) {
+          row.dataset.autoEqualShare = "1";
+          row.dataset.autoEqualFieldId = fieldId;
+        }
+
         ctlHost.innerHTML = `
           <div id="${fieldId}" class="mcWrap" style="display:flex; flex-direction:column; gap:10px;">
             <div class="mcRow" style="display:flex; flex-wrap:wrap; gap:10px;">
@@ -3273,6 +3338,8 @@ function renderDynamicForm(schema, optionsRows){
       }
     }
   }
+
+  bindAutoEqualShareGroup_(formHost);
 
   const submitBtn = qs("#btnDynSubmit");
   const clearBtn  = qs("#btnDynClear");
