@@ -2994,33 +2994,19 @@ async function showForm(formKey){
   const idbBundleKey = "bundle:" + APP.currentFormKey;
   const idbOptionsKey = "options:" + APP.currentFormKey;
 
-  const forceRefresh = !!window.__UFRP_FORCE_CACHE_REFRESH__;
+  const sessionBundleFreshKey = "__UFRP_SESSION_BUNDLE_REFRESHED__:" + APP.currentFormKey;
+  const sessionBundleFresh = sessionStorage.getItem(sessionBundleFreshKey) === "1";
 
-  if (!forceRefresh) {
+  if (sessionBundleFresh && window.__OFFLINE__ && typeof window.__OFFLINE__.cacheGet === "function") {
     try {
-      const raw = localStorage.getItem(cacheKey);
-      const cached = raw ? JSON.parse(raw) : null;
-      const data = cached && cached.data ? cached.data : null;
-
-      if (data && data.ok) {
-        console.log("Using persistent cached bundle (localStorage) ✅", APP.currentFormKey);
-        bundle = data;
+      const idbCached = await window.__OFFLINE__.cacheGet(idbBundleKey);
+      const idbData = idbCached && idbCached.data ? idbCached.data : null;
+      if (idbData && idbData.ok) {
+        console.log("Using session-fresh cached bundle ✅", APP.currentFormKey);
+        bundle = idbData;
       }
     } catch (e) {
-      console.warn("Persistent bundle local cache read failed:", e);
-    }
-
-    if (!bundle && window.__OFFLINE__ && typeof window.__OFFLINE__.cacheGet === "function") {
-      try {
-        const idbCached = await window.__OFFLINE__.cacheGet(idbBundleKey);
-        const idbData = idbCached && idbCached.data ? idbCached.data : null;
-        if (idbData && idbData.ok) {
-          console.log("Using persistent cached bundle (IndexedDB) ✅", APP.currentFormKey);
-          bundle = idbData;
-        }
-      } catch (e) {
-        console.warn("Persistent bundle IndexedDB cache read failed:", e);
-      }
+      console.warn("Session-fresh bundle read failed:", e);
     }
   }
 
@@ -3041,6 +3027,7 @@ async function showForm(formKey){
         console.warn("Bundle IDB cache failed:", idbErr);
       }
 
+      sessionStorage.setItem("__UFRP_SESSION_BUNDLE_REFRESHED__:" + APP.currentFormKey, "1");
       console.log("Bundle cached ✅", APP.currentFormKey);
     } catch (cacheErr) {
       console.warn("Bundle cache failed:", cacheErr);
@@ -3197,9 +3184,10 @@ async function showForm(formKey){
   }
 
   let optRes = { ok: true, rows: [] };
-  let optionsLoadedFromCache = false;
+  const sessionOptionsFreshKey = "__UFRP_SESSION_OPTIONS_REFRESHED__:" + APP.currentFormKey;
+  const sessionOptionsFresh = sessionStorage.getItem(sessionOptionsFreshKey) === "1";
 
-  if (!forceRefresh && window.__OFFLINE__ && typeof window.__OFFLINE__.cacheGet === "function") {
+  if (sessionOptionsFresh && window.__OFFLINE__ && typeof window.__OFFLINE__.cacheGet === "function") {
     try {
       const idbCached = await window.__OFFLINE__.cacheGet(idbOptionsKey);
       const idbData = idbCached && idbCached.data ? idbCached.data : null;
@@ -3207,15 +3195,14 @@ async function showForm(formKey){
       if (idbData && Array.isArray(idbData.rows)) {
         optRes = idbData;
         APP.currentOptionsBundle = optRes;
-        optionsLoadedFromCache = true;
-        console.log("Using persistent cached options ✅", APP.currentFormKey, "rows:", idbData.rows.length);
+        console.log("Using session-fresh cached options ✅", APP.currentFormKey, "rows:", idbData.rows.length);
       }
     } catch (e) {
-      console.warn("Persistent options cache read failed:", e);
+      console.warn("Session-fresh options read failed:", e);
     }
   }
 
-  if (!optionsLoadedFromCache) try {
+  if (!(sessionOptionsFresh && Array.isArray(optRes.rows))) try {
     optRes = await fetch("/api/form-options.php?formKey=" + encodeURIComponent(APP.currentFormKey), { credentials: "include" }).then(r => r.json());
     APP.currentOptionsBundle = optRes;
 
@@ -3251,6 +3238,7 @@ async function showForm(formKey){
   }
 
   APP.currentOptionsBundle = optRes;
+  sessionStorage.setItem("__UFRP_SESSION_OPTIONS_REFRESHED__:" + APP.currentFormKey, "1");
 
   renderDynamicForm(APP.currentSchema, (optRes && optRes.rows) ? optRes.rows : []);
   setStatus("", false);
@@ -3899,7 +3887,6 @@ function hideAppRefreshModal_(){
 }
 
 function refreshAppNow_(){
-  try { localStorage.setItem("__UFRP_FORCE_CACHE_REFRESH__", "1"); } catch (_) {}
   try { hideAppRefreshModal_(); } catch (_) {}
   try { setStatus("در حال بروزرسانی...", true); } catch (_) {}
 
@@ -4208,12 +4195,17 @@ window.submitForm = async function submitForm(){
 async function appInit(){
 
   try {
-    window.__UFRP_FORCE_CACHE_REFRESH__ =
-      localStorage.getItem("__UFRP_FORCE_CACHE_REFRESH__") === "1";
-    localStorage.removeItem("__UFRP_FORCE_CACHE_REFRESH__");
-  } catch (_) {
-    window.__UFRP_FORCE_CACHE_REFRESH__ = false;
-  }
+    sessionStorage.removeItem("__UFRP_SESSION_MENU_REFRESHED__");
+
+    Object.keys(sessionStorage).forEach(k => {
+      if (k.startsWith("__UFRP_SESSION_BUNDLE_REFRESHED__")) {
+        sessionStorage.removeItem(k);
+      }
+      if (k.startsWith("__UFRP_SESSION_OPTIONS_REFRESHED__")) {
+        sessionStorage.removeItem(k);
+      }
+    });
+  } catch (_) {}
 
   updateOnlineIndicator();
 
@@ -4537,9 +4529,9 @@ async function appInit(){
   setStatus("در حال بارگذاری", true);
 
   let res;
-  const forceRefresh = !!window.__UFRP_FORCE_CACHE_REFRESH__;
+  const sessionMenuFresh = sessionStorage.getItem("__UFRP_SESSION_MENU_REFRESHED__") === "1";
 
-  if (!forceRefresh) {
+  if (sessionMenuFresh) {
     try {
       const raw = localStorage.getItem("__UFRP_MENU_CACHE__");
       const cached = raw ? JSON.parse(raw) : null;
@@ -4554,16 +4546,16 @@ async function appInit(){
               email: data.email,
               fullName: data.fullName || ""
             });
-            console.log("Session restored from persistent cached menu ✅", data.email);
+            console.log("Session restored from session-fresh cached menu ✅", data.email);
           }
         } catch (e) {
-          console.warn("Session restore from persistent cached menu failed:", e);
+          console.warn("Session restore from session-fresh cached menu failed:", e);
         }
 
-        console.log("Using persistent cached menu ✅");
+        console.log("Using session-fresh cached menu ✅");
       }
     } catch (e) {
-      console.warn("Persistent menu cache read failed:", e);
+      console.warn("Session-fresh menu read failed:", e);
     }
   }
 
@@ -4628,6 +4620,7 @@ async function appInit(){
                 data: res
               }));
 
+              sessionStorage.setItem("__UFRP_SESSION_MENU_REFRESHED__", "1");
               console.log("Menu cached ✅");
             } catch (cacheErr) {
               console.warn("Menu cache failed:", cacheErr);
@@ -4740,11 +4733,6 @@ async function appInit(){
         return;
       }
 
-      if (!window.__UFRP_FORCE_CACHE_REFRESH__) {
-        console.log("Prefetch skipped (using persistent cache until explicit refresh) ✅");
-        return;
-      }
-
       if (window.__UFRP_PREFETCH_RUNNING__) return;
       window.__UFRP_PREFETCH_RUNNING__ = true;
 
@@ -4813,6 +4801,7 @@ async function appInit(){
 
                   if (optRes && optRes.ok && window.__OFFLINE__ && typeof window.__OFFLINE__.cachePut === "function") {
                     await window.__OFFLINE__.cachePut("options:" + k, "options", optRes);
+                    sessionStorage.setItem("__UFRP_SESSION_OPTIONS_REFRESHED__:" + k, "1");
                     console.log("Prefetch options cached ✅", k, "rows:", Array.isArray(optRes.rows) ? optRes.rows.length : 0);
                   } else {
                     console.warn("Prefetch options skipped ⚠️", k, optRes?.error || "no ok");
@@ -4822,6 +4811,7 @@ async function appInit(){
                 }
 
                 ok++;
+                sessionStorage.setItem("__UFRP_SESSION_BUNDLE_REFRESHED__:" + k, "1");
                 console.log("Prefetch cached ✅", k);
               } else {
                 fail++;
