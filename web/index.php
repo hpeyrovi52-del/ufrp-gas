@@ -1066,14 +1066,41 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
         height:42px;
         padding:0 14px;
         border-radius:999px;
-        border:1px solid rgba(30,91,215,0.16);
-        background: rgba(30,91,215,0.10);
-        color: rgba(30,91,215,0.98);
+        border:1px solid rgba(17,24,39,0.10);
+        background: rgba(255,255,255,0.60);
+        box-shadow:0 1px 2px rgba(17,24,39,0.06);
+        color: rgba(17,24,39,0.88);
         font-size:13px;
         font-weight:900;
         white-space:nowrap;
         width:auto;
         min-width:auto;
+        cursor:pointer;
+        user-select:none;
+        transition:
+          background 140ms ease,
+          border-color 140ms ease,
+          color 140ms ease,
+          box-shadow 140ms ease,
+          transform 140ms ease;
+      }
+
+      .desktopRefreshBtn:hover{
+        border-color: rgba(30,91,215,0.25);
+        background: rgba(30,91,215,0.06);
+        color: rgba(17,24,39,0.92);
+      }
+
+      .desktopRefreshBtn:active{
+        transform: translateY(1px);
+      }
+
+      .desktopRefreshBtn:focus-visible{
+        outline:none;
+        border-color: rgba(30,91,215,0.30);
+        box-shadow:
+          0 1px 2px rgba(17,24,39,0.06),
+          0 0 0 4px rgba(30,91,215,0.10);
       }
 
       .desktopRefreshBtn svg{
