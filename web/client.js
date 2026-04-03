@@ -1796,6 +1796,38 @@ function scheduleHidePrefetchChip_(ms){
   }, Math.max(0, Number(ms || 0)));
 }
 
+function readPrefetchManifest_(){
+  try {
+    const raw = localStorage.getItem("__UFRP_PREFETCH_MANIFEST__");
+    const manifest = raw ? JSON.parse(raw) : null;
+    return manifest && typeof manifest === "object" ? manifest : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function formatPrefetchManifestUpdatedAtFa_(isoStr){
+  try {
+    const d = new Date(String(isoStr || "").trim());
+    if (!(d instanceof Date) || isNaN(d.getTime())) return "";
+
+    const j = toJalaali(d.getFullYear(), d.getMonth() + 1, d.getDate());
+    return `${toFaNumber(j.jd)} ${J_MONTHS[j.jm - 1]} ${toFaNumber(j.jy)}`;
+  } catch (_) {
+    return "";
+  }
+}
+
+function showCachedManifestChip_(){
+  const manifest = readPrefetchManifest_();
+  const faDate = formatPrefetchManifestUpdatedAtFa_(manifest?.updatedAt || "");
+  const msg = faDate
+    ? `استفاده از نسخه کش‌شده — آخرین بروزرسانی: ${faDate}`
+    : "استفاده از نسخه کش‌شده";
+
+  setPrefetchChipState_(msg, "");
+}
+
 function showMenuReadyChip_(){
   if (__UFRP_PREFETCH_MENU_TIMER__) {
     clearTimeout(__UFRP_PREFETCH_MENU_TIMER__);
@@ -1817,7 +1849,15 @@ function showMenuReadyChip_(){
         `در حال آماده‌سازی فرم‌ها — ${toFaDigits(String(p.done || 0))} از ${toFaDigits(String(p.total || 0))}`,
         "pending"
       );
+      return;
     }
+
+    if (window.__UFRP_PREFETCH_RESTORED_FROM_MANIFEST__) {
+      showCachedManifestChip_();
+      return;
+    }
+
+    hidePrefetchChip_();
   }, 900);
 }
 
@@ -4690,31 +4730,39 @@ async function appInit(){
   let res;
   const sessionMenuFresh = sessionStorage.getItem("__UFRP_SESSION_MENU_REFRESHED__") === "1";
 
-  if (sessionMenuFresh) {
+  async function tryReadCachedMenu_(restoreSessionToo){
     try {
       const raw = localStorage.getItem("__UFRP_MENU_CACHE__");
       const cached = raw ? JSON.parse(raw) : null;
       const data = cached && cached.data ? cached.data : null;
 
-      if (data && data.ok) {
-        res = data;
+      if (!(data && data.ok)) return null;
 
+      if (restoreSessionToo) {
         try {
-          if (data.email) {
+          if (data.email && navigator.onLine) {
             await gsCall("session_set", {
               email: data.email,
               fullName: data.fullName || ""
             });
-            console.log("Session restored from session-fresh cached menu ✅", data.email);
+            console.log("Session restored from cached menu ✅", data.email);
           }
         } catch (e) {
-          console.warn("Session restore from session-fresh cached menu failed:", e);
+          console.warn("Session restore from cached menu failed:", e);
         }
-
-        console.log("Using session-fresh cached menu ✅");
       }
+
+      return data;
     } catch (e) {
-      console.warn("Session-fresh menu read failed:", e);
+      console.warn("Cached menu read failed:", e);
+      return null;
+    }
+  }
+
+  if (sessionMenuFresh) {
+    res = await tryReadCachedMenu_(true);
+    if (res) {
+      console.log("Using session-fresh cached menu ✅");
     }
   }
 
@@ -4814,21 +4862,12 @@ async function appInit(){
   } catch (e) {
     console.warn("Menu fetch failed. Trying cache...", e);
 
-    try {
-      const raw = localStorage.getItem("__UFRP_MENU_CACHE__");
-      const cached = raw ? JSON.parse(raw) : null;
-      const data = cached && cached.data ? cached.data : null;
-
-      if (data && data.ok) {
-        console.warn("Using cached menu (offline) ✅", cached?.savedAt || "");
-        res = data;
-      } else {
-        setStatus("خطا در دریافت منو (کش موجود نیست)", false);
-        return;
-      }
-    } catch (err) {
-      console.error(err);
-      setStatus("خطا در دریافت منو (خواندن کش ناموفق بود)", false);
+    const cachedMenu = await tryReadCachedMenu_(false);
+    if (cachedMenu && cachedMenu.ok) {
+      console.warn("Using cached menu (offline/fallback) ✅");
+      res = cachedMenu;
+    } else {
+      setStatus("خطا در دریافت منو (کش موجود نیست)", false);
       return;
     }
   }
@@ -4862,7 +4901,13 @@ async function appInit(){
   }
 
   renderMenu(APP.menu);
-  showMenuReadyChip_();
+
+  if (window.__UFRP_PREFETCH_RESTORED_FROM_MANIFEST__) {
+    showCachedManifestChip_();
+  } else {
+    showMenuReadyChip_();
+  }
+
   setStatus("", false);
 
   /* =======================================================
