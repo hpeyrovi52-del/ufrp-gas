@@ -1911,6 +1911,45 @@ function updateRefreshChipVisibility_(isMenuView){
   refreshBtn.style.display = isMenuView ? "inline-flex" : "none";
 }
 
+let __UFRP_REQUIRED_UPDATE_RUNNING__ = false;
+
+async function checkForRequiredAppUpdateOnMenuLoad_(){
+  if (__UFRP_REQUIRED_UPDATE_RUNNING__) return;
+  if (!navigator.onLine) return;
+
+  try {
+    const res = await fetch("/api/app-version.php", {
+      method: "GET",
+      credentials: "same-origin",
+      cache: "no-store"
+    }).then(r => r.json());
+
+    const enabled = !!res?.enabled;
+    const localBuild = String(window.__UFRP_APP_BUILD_ID__ || "").trim();
+    const serverBuild = String(res?.buildId || "").trim();
+
+    if (!enabled) return;
+    if (!localBuild || !serverBuild) return;
+    if (localBuild === serverBuild) return;
+
+    __UFRP_REQUIRED_UPDATE_RUNNING__ = true;
+
+    const msg =
+      String(res?.message || "").trim() ||
+      "نسخه جدید برنامه آماده است. برنامه اکنون بروزرسانی می‌شود.";
+    const delayMs = Math.max(0, Number(res?.delayMs || 1400));
+
+    try { showToast_(msg); } catch (_) {}
+    try { setStatus(msg, false); } catch (_) {}
+
+    setTimeout(() => {
+      try { refreshAppNow_(); } catch (_) {}
+    }, delayMs);
+  } catch (e) {
+    console.warn("Required app update check failed:", e);
+  }
+}
+
 function showMenuView(){
   const mv = qs("#menuView");
   const fv = qs("#formView");
@@ -5241,6 +5280,10 @@ async function appInit(){
   }
 
   setStatus("", false);
+
+  Promise.resolve()
+    .then(() => checkForRequiredAppUpdateOnMenuLoad_())
+    .catch(() => {});
 
   /* =======================================================
    * PREFETCH REGISTRY

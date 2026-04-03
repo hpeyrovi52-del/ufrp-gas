@@ -1514,6 +1514,16 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
 window.__UFRP_USER_EMAIL__ = <?php
   echo json_encode($_SESSION["UFRP_USER"]["email"] ?? "");
 ?>;
+
+window.__UFRP_APP_BUILD_ID__ = <?php
+  echo json_encode(sha1(implode("|", [
+    @filemtime(__DIR__ . "/index.php") ?: 0,
+    @filemtime(__DIR__ . "/client.js") ?: 0,
+    @filemtime(__DIR__ . "/client-offline.js") ?: 0,
+    @filemtime(__DIR__ . "/sw.js") ?: 0,
+    @filemtime(__DIR__ . "/manifest.webmanifest") ?: 0
+  ])));
+?>;
 </script>
 
     
