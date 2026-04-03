@@ -1472,7 +1472,13 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
           navigator.serviceWorker.register("/sw.js")
             .then((reg) => {
               console.log("SW registered ✅", reg.scope || "");
-              try { reg.update(); } catch (_) {}
+
+              if (navigator.onLine) {
+                Promise.resolve(reg.update())
+                  .catch((err) => {
+                    console.warn("SW update skipped:", err);
+                  });
+              }
             })
             .catch((err) => {
               console.warn("SW registration failed:", err);
