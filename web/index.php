@@ -228,11 +228,14 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
         min-height: 42px;
         padding: 0 14px;
         border-radius: 18px;
-        border: 1px solid rgba(167,139,250,0.22);
+        border: 1px solid rgba(167,139,250,0.34);
         background: rgba(237,233,254,0.96);
-        box-shadow: 0 1px 2px rgba(17,24,39,0.06);
-        color: rgba(55,65,81,0.96);
+        box-shadow:
+          0 1px 2px rgba(17,24,39,0.05),
+          0 0 0 3px rgba(167,139,250,0.10);
+        color: rgba(107,114,128,0.96);
         box-sizing: border-box;
+        cursor: default;
       }
 
       #titleChip #appTitle{
