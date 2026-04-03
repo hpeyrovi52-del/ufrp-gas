@@ -1097,32 +1097,35 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
       .prefetchChip{
         display:inline-flex;
         align-items:center;
-        justify-content:center;
+        justify-content:flex-start;
         gap:8px;
-        min-height:42px;
-        padding:0 14px;
+        min-height:34px;
+        padding:7px 12px;
         border-radius:999px;
-        border:1px solid rgba(30,91,215,0.14);
-        background: rgba(30,91,215,0.08);
-        color: rgba(30,91,215,0.96);
-        font-size:13px;
-        font-weight:900;
-        white-space:nowrap;
-        width:auto;
-        max-width:min(88vw, 320px);
+        border:1px solid rgba(17,24,39,0.08);
+        background: rgba(17,24,39,0.05);
+        color: rgba(17,24,39,0.55);
+        font-size:12px;
+        font-weight:800;
+        line-height:1.45;
+        white-space:normal;
+        text-align:right;
+        direction:rtl;
+        width:fit-content;
+        max-width:min(88vw, 340px);
         box-sizing:border-box;
       }
 
       .prefetchChip.done{
-        border-color: rgba(34,197,94,0.18);
-        background: rgba(34,197,94,0.10);
-        color: rgba(21,128,61,0.96);
+        border-color: rgba(17,24,39,0.08);
+        background: rgba(17,24,39,0.05);
+        color: rgba(17,24,39,0.55);
       }
 
       .prefetchChip.error{
-        border-color: rgba(245,158,11,0.20);
-        background: rgba(245,158,11,0.10);
-        color: rgba(146,64,14,0.96);
+        border-color: rgba(17,24,39,0.08);
+        background: rgba(17,24,39,0.05);
+        color: rgba(17,24,39,0.55);
       }
 
       @media (hover: none), (pointer: coarse) {
@@ -1236,6 +1239,17 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
                   <span id="appTitle">سامانه ثبت تراکنش های مالی</span>
                 </div>
 
+                <div class="sub" style="text-align:right; margin:0;">
+                  <span id="userFullName"></span>
+                </div>
+
+                <div id="prefetchChip"
+                     class="prefetchChip"
+                     style="display:none;"
+                     aria-live="polite">
+                  <span id="prefetchText">در حال آماده‌سازی فرم‌ها</span>
+                </div>
+
                 <button id="outboxChip"
                         class="outboxChip"
                         type="button"
@@ -1244,10 +1258,6 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
                   <span class="outboxDot" aria-hidden="true"></span>
                   <span id="outboxText">Outbox</span>
                 </button>
-
-                <div class="sub" style="text-align:right; margin:0;">
-                  <span id="userFullName"></span>
-                </div>
               </div>
 
               <div class="topLeftActions">
@@ -1265,13 +1275,6 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
                     </svg>
                     <span>بروزرسانی کامل برنامه</span>
                   </button>
-
-                  <div id="prefetchChip"
-                       class="prefetchChip"
-                       style="display:none;"
-                       aria-live="polite">
-                    <span id="prefetchText">در حال آماده‌سازی فرم‌ها</span>
-                  </div>
                 </div>
 
                 <button class="backBtn"
