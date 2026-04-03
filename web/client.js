@@ -3613,11 +3613,12 @@ function focusNextQuestionField_(currentFieldId){
     } catch (_) {}
   };
 
-  const adjustTextEntryFieldAfterKeyboard_ = (fieldEl) => {
-    if (!fieldEl || !scrollArea) return;
+  const adjustTextEntryFieldAfterKeyboard_ = (fieldEl, inputEl) => {
+    if (!fieldEl || !scrollArea || !inputEl) return;
 
     try {
       const rowRect = fieldEl.getBoundingClientRect();
+      const inputRect = inputEl.getBoundingClientRect();
       const scrollRect = scrollArea.getBoundingClientRect();
       const fixedHeader = document.getElementById("fixedHeaderArea");
       const baseHeaderOffset = Math.max(18, Math.min(42, Number(fixedHeader?.offsetHeight || 0) * 0.2));
@@ -3626,21 +3627,22 @@ function focusNextQuestionField_(currentFieldId){
       const keyboardInset = Math.max(0, Number(window.innerHeight || 0) - viewportHeight);
       const effectiveBottom = Math.min(scrollRect.bottom, viewportHeight || scrollRect.bottom) - Math.max(18, keyboardInset + 10);
 
-      const visibleTop = scrollRect.top + baseHeaderOffset + 14;
-      const desiredBottomEdge = effectiveBottom - 20;
+      const desiredTopEdge = scrollRect.top + baseHeaderOffset + 18;
+      const desiredInputBottom = effectiveBottom - 18;
 
-      let targetTop =
-        scrollArea.scrollTop +
-        (rowRect.bottom - desiredBottomEdge);
+      let targetTop = scrollArea.scrollTop;
+
+      if (rowRect.top < desiredTopEdge) {
+        targetTop += rowRect.top - desiredTopEdge;
+      }
+
+      const projectedInputBottom = inputRect.bottom - (targetTop - scrollArea.scrollTop);
+      if (projectedInputBottom > desiredInputBottom) {
+        targetTop += projectedInputBottom - desiredInputBottom;
+      }
 
       const maxScrollableTop = Math.max(0, scrollArea.scrollHeight - scrollArea.clientHeight);
       targetTop = Math.max(0, Math.min(maxScrollableTop, targetTop));
-
-      const projectedTop = rowRect.top - (targetTop - scrollArea.scrollTop);
-
-      if (projectedTop < visibleTop) {
-        targetTop += projectedTop - visibleTop;
-      }
 
       scrollArea.scrollTo({
         top: Math.max(0, targetTop),
@@ -3671,7 +3673,11 @@ function focusNextQuestionField_(currentFieldId){
               target.focus();
             }
           } else if (textEntryField) {
-            target.focus();
+            try {
+              target.focus({ preventScroll: true });
+            } catch (_) {
+              target.focus();
+            }
           } else {
             try {
               target.focus({ preventScroll: true });
@@ -3686,10 +3692,10 @@ function focusNextQuestionField_(currentFieldId){
         setTimeout(() => scrollDropdownFieldIntoViewWithinApp_(nextField), 120);
         setTimeout(() => scrollDropdownFieldIntoViewWithinApp_(nextField), 420);
       } else if (textEntryField) {
-        setTimeout(() => adjustTextEntryFieldAfterKeyboard_(nextField), 120);
-        setTimeout(() => adjustTextEntryFieldAfterKeyboard_(nextField), 320);
-        setTimeout(() => adjustTextEntryFieldAfterKeyboard_(nextField), 620);
-        setTimeout(() => adjustTextEntryFieldAfterKeyboard_(nextField), 980);
+        setTimeout(() => adjustTextEntryFieldAfterKeyboard_(nextField, target), 120);
+        setTimeout(() => adjustTextEntryFieldAfterKeyboard_(nextField, target), 280);
+        setTimeout(() => adjustTextEntryFieldAfterKeyboard_(nextField, target), 520);
+        setTimeout(() => adjustTextEntryFieldAfterKeyboard_(nextField, target), 900);
       }
     }, dropdownField ? 260 : 120);
 
