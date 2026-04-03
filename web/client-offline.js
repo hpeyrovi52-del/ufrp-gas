@@ -543,6 +543,14 @@
     }
   };
 
+  setTimeout(() => {
+    try {
+      if (window.OUTBOX && typeof window.OUTBOX.refresh === "function") {
+        window.OUTBOX.refresh();
+      }
+    } catch (_) {}
+  }, 0);
+
   window.addEventListener("online", () => {
     console.log("Connection restored. Triggering auto-flush...");
 

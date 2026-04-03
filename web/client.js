@@ -1654,7 +1654,8 @@ async function waitForAllUploads(){
 }
 
 function captureFileUploadSnapshot_(schema, submissionUid){
-  const out = [];
+  const live = [];
+  const persisted = [];
 
   for (let i = 0; i < (schema || []).length; i++){
     const it = schema[i] || {};
@@ -1667,7 +1668,7 @@ function captureFileUploadSnapshot_(schema, submissionUid){
 
     const items = Array.isArray(fileInput?.__items) ? fileInput.__items : [];
 
-    out.push({
+    live.push({
       fieldId,
       title,
       items,
@@ -1675,11 +1676,26 @@ function captureFileUploadSnapshot_(schema, submissionUid){
         ? fileInput.__queue
         : Promise.resolve()
     });
+
+    persisted.push({
+      fieldId,
+      title,
+      items: items.map((item) => ({
+        key: String(item?.key || "").trim(),
+        blobId: String(item?.blobId || "").trim(),
+        name: String((item?.file && item.file.name) || item?.name || "").trim(),
+        type: String((item?.file && item.file.type) || item?.type || "application/octet-stream").trim(),
+        size: Number((item?.file && item.file.size) || item?.size || 0),
+        uploadedLocal: !!item?.uploadedLocal,
+        uploaded: !!item?.uploaded,
+        viewLink: String(item?.viewLink || "").trim()
+      }))
+    });
   }
 
   window.__UFRP_FILE_JOB_REGISTRY__ = window.__UFRP_FILE_JOB_REGISTRY__ || {};
-  window.__UFRP_FILE_JOB_REGISTRY__[String(submissionUid || "")] = out;
-  return out;
+  window.__UFRP_FILE_JOB_REGISTRY__[String(submissionUid || "")] = live;
+  return persisted;
 }
 
 function getCapturedFileUploadSnapshot_(submissionUid){
@@ -4731,6 +4747,17 @@ async function appInit(){
             if (!item || item.uploadedLocal) continue;
 
             let file = item.file || null;
+
+            const isRealBinaryFile =
+              !!file &&
+              (
+                (typeof Blob !== "undefined" && file instanceof Blob) ||
+                (typeof File !== "undefined" && file instanceof File)
+              );
+
+            if (!isRealBinaryFile) {
+              file = null;
+            }
 
             if (!file && item.blobId && window.__OFFLINE__ && typeof window.__OFFLINE__.getBlob === "function") {
               try {
