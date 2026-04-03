@@ -395,9 +395,17 @@ function outboxStagePercent_(stageKey){
 
 const __RECENT_OUTBOX_TTL_MS__ = 2 * 60 * 1000;
 
+function outboxStorageKey_(base){
+  const email =
+    String(window.__UFRP_USER_EMAIL__ || APP?.email || "")
+      .trim()
+      .toLowerCase() || "anon";
+  return `${String(base || "").trim()}:${email}`;
+}
+
 function getActiveOutboxRegistry_(){
   try {
-    const raw = sessionStorage.getItem("__UFRP_ACTIVE_OUTBOX__");
+    const raw = localStorage.getItem(outboxStorageKey_("__UFRP_ACTIVE_OUTBOX__"));
     const arr = raw ? JSON.parse(raw) : [];
     return Array.isArray(arr) ? arr : [];
   } catch (_) {
@@ -407,7 +415,10 @@ function getActiveOutboxRegistry_(){
 
 function setActiveOutboxRegistry_(items){
   try {
-    sessionStorage.setItem("__UFRP_ACTIVE_OUTBOX__", JSON.stringify(Array.isArray(items) ? items : []));
+    localStorage.setItem(
+      outboxStorageKey_("__UFRP_ACTIVE_OUTBOX__"),
+      JSON.stringify(Array.isArray(items) ? items : [])
+    );
   } catch (_) {}
 }
 
@@ -985,12 +996,6 @@ function registryEntryFromOutboxItem_(it){
 
 async function syncActiveOutboxRegistry_(){
   const activeItems = normalizeActiveOutboxRegistryItems_();
-
-  if (!activeItems.length) {
-    __OUTBOX_CURRENT_ITEMS__ = [];
-    return [];
-  }
-
   const deviceToServerDown = (!navigator.onLine) || !!window.__UFRP_FORCE_OFFLINE__;
 
   let localItems = [];
@@ -1005,6 +1010,21 @@ async function syncActiveOutboxRegistry_(){
     }
   } catch (e) {
     console.warn("Local outbox items failed:", e);
+  }
+
+  if (!activeItems.length && localItems.length) {
+    const keep = localItems
+      .map(registryEntryFromOutboxItem_)
+      .filter(Boolean);
+
+    setActiveOutboxRegistry_(keep);
+    __OUTBOX_CURRENT_ITEMS__ = localItems.slice();
+    return localItems.slice();
+  }
+
+  if (!activeItems.length) {
+    __OUTBOX_CURRENT_ITEMS__ = [];
+    return [];
   }
 
   try {
@@ -1364,29 +1384,18 @@ async function updateOutboxChip(){
   if (!chip || !txt) return;
 
   const immediate = outboxItemsFromRegistry_();
-  renderOutboxChipFromItems_(chip, txt, immediate);
 
-  if (!immediate.length) {
-    const panel = document.getElementById("outboxPanel");
-    if (panel) panel.classList.add("hidden");
-    window.__OUTBOX_PANEL_OPEN__ = false;
-    stopOutboxLiveRefresh_();
-    return;
+  if (immediate.length) {
+    renderOutboxChipFromItems_(chip, txt, immediate);
   }
 
   const synced = await syncActiveOutboxRegistry_().catch(() => immediate);
   const latestLocal = outboxItemsFromRegistry_();
+  const finalItems =
+    (Array.isArray(synced) && synced.length) ? synced :
+    (latestLocal.length ? latestLocal : []);
 
-  if ((!Array.isArray(synced) || !synced.length) && latestLocal.length > 0) {
-    renderOutboxChipFromItems_(chip, txt, latestLocal);
-
-    if (window.__OUTBOX_PANEL_OPEN__) {
-      renderOutboxPanelBody_(latestLocal);
-    }
-    return;
-  }
-
-  if (!Array.isArray(synced) || !synced.length) {
+  if (!finalItems.length) {
     __OUTBOX_CURRENT_ITEMS__ = [];
     __OUTBOX_LAST_RENDERED_ITEMS__ = [];
     chip.style.display = "none";
@@ -1399,10 +1408,10 @@ async function updateOutboxChip(){
     return;
   }
 
-  renderOutboxChipFromItems_(chip, txt, synced);
+  renderOutboxChipFromItems_(chip, txt, finalItems);
 
   if (window.__OUTBOX_PANEL_OPEN__) {
-    renderOutboxPanelBody_(synced);
+    renderOutboxPanelBody_(finalItems);
   }
 }
 document.addEventListener("click", (e) => {
