@@ -1456,72 +1456,29 @@ function stopOutboxLiveRefresh_(){
   } catch (_) {}
 }
 
-let __OUTBOX_LONGPRESS_ACTIVE__ = false;
-let __OUTBOX_LONGPRESS_FIRED__ = false;
-let __OUTBOX_LONGPRESS_START_X__ = 0;
-let __OUTBOX_LONGPRESS_START_Y__ = 0;
+let __OUTBOX_RESET_TAP_COUNT__ = 0;
+let __OUTBOX_RESET_TAP_TIMER__ = null;
+let __OUTBOX_RESET_BUSY__ = false;
 
-function cancelOutboxLongPress_(){
-  __OUTBOX_LONGPRESS_ACTIVE__ = false;
-  if (__outboxDebugTimer) {
-    clearTimeout(__outboxDebugTimer);
-    __outboxDebugTimer = null;
+function resetOutboxSecretTapState_(){
+  __OUTBOX_RESET_TAP_COUNT__ = 0;
+  if (__OUTBOX_RESET_TAP_TIMER__) {
+    clearTimeout(__OUTBOX_RESET_TAP_TIMER__);
+    __OUTBOX_RESET_TAP_TIMER__ = null;
   }
 }
 
-function armOutboxLongPress_(x, y){
-  __OUTBOX_LONGPRESS_ACTIVE__ = true;
-  __OUTBOX_LONGPRESS_FIRED__ = false;
-  __OUTBOX_LONGPRESS_START_X__ = Number(x || 0);
-  __OUTBOX_LONGPRESS_START_Y__ = Number(y || 0);
-
-  if (__outboxDebugTimer) clearTimeout(__outboxDebugTimer);
-  __outboxDebugTimer = setTimeout(async () => {
-    try {
-      __OUTBOX_LONGPRESS_FIRED__ = true;
-      await clearAllOutboxNow_();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      cancelOutboxLongPress_();
-    }
-  }, 4000);
-}
-
-function beginOutboxLongPress_(e){
-  const chip = document.getElementById("outboxChip");
-  const panel = document.getElementById("outboxPanel");
-  const panelHeader = panel ? panel.querySelector(".outboxPanelHeader") : null;
-
-  const target = e.target instanceof Element ? e.target : null;
-  const onChip = !!(chip && target && chip.contains(target));
-  const onPanelHeader = !!(panelHeader && target && panelHeader.contains(target));
-
-  if (!onChip && !onPanelHeader) return;
-
-  armOutboxLongPress_(e.clientX, e.clientY);
-}
-
-function moveOutboxLongPress_(x, y){
-  if (!__OUTBOX_LONGPRESS_ACTIVE__) return;
-
-  const dx = Math.abs(Number(x || 0) - __OUTBOX_LONGPRESS_START_X__);
-  const dy = Math.abs(Number(y || 0) - __OUTBOX_LONGPRESS_START_Y__);
-
-  if (dx > 14 || dy > 14) {
-    cancelOutboxLongPress_();
+function armOutboxSecretTapReset_(){
+  if (__OUTBOX_RESET_TAP_TIMER__) {
+    clearTimeout(__OUTBOX_RESET_TAP_TIMER__);
   }
+
+  __OUTBOX_RESET_TAP_TIMER__ = setTimeout(() => {
+    resetOutboxSecretTapState_();
+  }, 2200);
 }
 
-document.addEventListener("pointerdown", beginOutboxLongPress_, true);
-document.addEventListener("pointermove", (e) => moveOutboxLongPress_(e.clientX, e.clientY), true);
-document.addEventListener("pointerup", cancelOutboxLongPress_, true);
-document.addEventListener("pointercancel", cancelOutboxLongPress_, true);
-
-document.addEventListener("touchstart", (e) => {
-  const touch = e.touches && e.touches[0];
-  if (!touch) return;
-
+async function handleOutboxSecretTap_(e){
   const chip = document.getElementById("outboxChip");
   const panel = document.getElementById("outboxPanel");
   const panelHeader = panel ? panel.querySelector(".outboxPanelHeader") : null;
@@ -1529,26 +1486,33 @@ document.addEventListener("touchstart", (e) => {
 
   const onChip = !!(chip && target && chip.contains(target));
   const onPanelHeader = !!(panelHeader && target && panelHeader.contains(target));
+
   if (!onChip && !onPanelHeader) return;
+  if (__OUTBOX_RESET_BUSY__) return;
 
-  armOutboxLongPress_(touch.clientX, touch.clientY);
-}, { passive: true, capture: true });
+  __OUTBOX_RESET_TAP_COUNT__ += 1;
+  armOutboxSecretTapReset_();
 
-document.addEventListener("touchmove", (e) => {
-  const touch = e.touches && e.touches[0];
-  if (!touch) return;
-  moveOutboxLongPress_(touch.clientX, touch.clientY);
-}, { passive: true, capture: true });
+  if (__OUTBOX_RESET_TAP_COUNT__ < 5) return;
 
-document.addEventListener("touchend", cancelOutboxLongPress_, { passive: true, capture: true });
-document.addEventListener("touchcancel", cancelOutboxLongPress_, { passive: true, capture: true });
+  __OUTBOX_RESET_BUSY__ = true;
+  resetOutboxSecretTapState_();
 
-document.addEventListener("click", (e) => {
-  if (!__OUTBOX_LONGPRESS_FIRED__) return;
-  __OUTBOX_LONGPRESS_FIRED__ = false;
-  e.preventDefault();
-  e.stopPropagation();
-}, true);
+  try {
+    e.preventDefault();
+    e.stopPropagation();
+  } catch (_) {}
+
+  try {
+    await clearAllOutboxNow_();
+  } catch (err) {
+    console.error(err);
+  } finally {
+    __OUTBOX_RESET_BUSY__ = false;
+  }
+}
+
+document.addEventListener("click", handleOutboxSecretTap_, true);
 
 document.addEventListener("click", (e) => {
   const panel = document.getElementById("outboxPanel");
