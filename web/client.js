@@ -4539,33 +4539,6 @@ async function appInit(){
   let res;
   const forceRefresh = !!window.__UFRP_FORCE_CACHE_REFRESH__;
 
-  if (!forceRefresh) {
-    try {
-      const raw = localStorage.getItem("__UFRP_MENU_CACHE__");
-      const cached = raw ? JSON.parse(raw) : null;
-      const data = cached && cached.data ? cached.data : null;
-
-      if (data && data.ok) {
-        res = data;
-
-        try {
-          if (data.email) {
-            await gsCall("session_set", {
-              email: data.email,
-              fullName: data.fullName || ""
-            });
-            console.log("Session restored from persistent cached menu ✅", data.email);
-          }
-        } catch (e) {
-          console.warn("Session restore from persistent cached menu failed:", e);
-        }
-
-        console.log("Using persistent cached menu ✅");
-      }
-    } catch (e) {
-      console.warn("Persistent menu cache read failed:", e);
-    }
-  }
 
   if (!res) try {
     if (!navigator.onLine) {
@@ -4740,18 +4713,20 @@ async function appInit(){
         return;
       }
 
-      if (!window.__UFRP_FORCE_CACHE_REFRESH__) {
-        console.log("Prefetch skipped (using persistent cache until explicit refresh) ✅");
-        return;
-      }
-
       if (window.__UFRP_PREFETCH_RUNNING__) return;
       window.__UFRP_PREFETCH_RUNNING__ = true;
 
-      console.log("Prefetch starting ✅ forms =", keys.length);
+      const forceRefresh = !!window.__UFRP_FORCE_CACHE_REFRESH__;
+
+      console.log(
+        forceRefresh
+          ? "Full prefetch starting after explicit refresh ✅ forms ="
+          : "Missing-cache prefetch starting ✅ forms =",
+        keys.length
+      );
 
       setTimeout(async () => {
-        let ok = 0, fail = 0;
+        let ok = 0, fail = 0, skipped = 0;
 
         try {
           const sess = await gsCall("session_get");
@@ -4760,25 +4735,88 @@ async function appInit(){
             return;
           }
 
+          const hasBundleCache_ = async (k) => {
+            try {
+              const raw = localStorage.getItem("__UFRP_BUNDLE_CACHE__:" + k);
+              const cached = raw ? JSON.parse(raw) : null;
+              const data = cached && cached.data ? cached.data : null;
+              if (data && data.ok) return true;
+            } catch (_) {}
+
+            try {
+              if (window.__OFFLINE__ && typeof window.__OFFLINE__.cacheGet === "function") {
+                const idbCached = await window.__OFFLINE__.cacheGet("bundle:" + k);
+                const idbData = idbCached && idbCached.data ? idbCached.data : null;
+                if (idbData && idbData.ok) return true;
+              }
+            } catch (_) {}
+
+            return false;
+          };
+
+          const hasOptionsCache_ = async (k) => {
+            try {
+              if (window.__OFFLINE__ && typeof window.__OFFLINE__.cacheGet === "function") {
+                const idbCached = await window.__OFFLINE__.cacheGet("options:" + k);
+                const idbData = idbCached && idbCached.data ? idbCached.data : null;
+                if (idbData && Array.isArray(idbData.rows)) return true;
+              }
+            } catch (_) {}
+
+            return false;
+          };
+
+          let targetKeys = [];
+
           for (const k of keys) {
             if (!navigator.onLine) {
               console.warn("Prefetch stopped (went offline) ⚠️");
               break;
             }
 
-            const alreadyBundleFresh = sessionStorage.getItem("__UFRP_SESSION_BUNDLE_REFRESHED__:" + k) === "1";
-            const alreadyOptionsFresh = sessionStorage.getItem("__UFRP_SESSION_OPTIONS_REFRESHED__:" + k) === "1";
-
-            if (alreadyBundleFresh && alreadyOptionsFresh) {
-              console.log("Prefetch skipped (already refreshed this session) ✅", k);
+            if (forceRefresh) {
+              targetKeys.push(k);
               continue;
+            }
+
+            const [hasBundle, hasOptions] = await Promise.all([
+              hasBundleCache_(k),
+              hasOptionsCache_(k)
+            ]);
+
+            if (hasBundle && hasOptions) {
+              skipped++;
+              continue;
+            }
+
+            targetKeys.push(k);
+          }
+
+          const priorityKey = String(window.__UFRP_PREFETCH_PRIORITY_KEY__ || "").trim();
+          if (priorityKey) {
+            targetKeys.sort((a, b) => {
+              if (a === priorityKey && b !== priorityKey) return -1;
+              if (b === priorityKey && a !== priorityKey) return 1;
+              return 0;
+            });
+          }
+
+          console.log(
+            "Prefetch target forms ✅ count =",
+            targetKeys.length,
+            "skipped =",
+            skipped,
+            "force =",
+            forceRefresh
+          );
+
+          for (const k of targetKeys) {
+            if (!navigator.onLine) {
+              console.warn("Prefetch stopped (went offline) ⚠️");
+              break;
             }
 
             const cacheKey = "__UFRP_BUNDLE_CACHE__:" + k;
-
-            if (!navigator.onLine && localStorage.getItem(cacheKey)) {
-              continue;
-            }
 
             try {
               const bundleRes = await fetch("/api/form-bundle.php?formKey=" + encodeURIComponent(k), {
@@ -4787,46 +4825,48 @@ async function appInit(){
                 cache: "no-store"
               }).then(r => r.json());
 
-              if (bundleRes && bundleRes.ok) {
-                localStorage.setItem(
-                  cacheKey,
-                  JSON.stringify({
-                    savedAt: new Date().toISOString(),
-                    data: bundleRes
-                  })
-                );
-
-                try {
-                  if (window.__OFFLINE__ && typeof window.__OFFLINE__.cachePut === "function") {
-                    await window.__OFFLINE__.cachePut("bundle:" + k, "bundle", bundleRes);
-                  }
-                } catch (idbErr) {
-                  console.warn("Prefetch IDB cache failed ❌", k, idbErr);
-                }
-
-                try {
-                  const optRes = await fetch("/api/form-options.php?formKey=" + encodeURIComponent(k), {
-                    method: "GET",
-                    credentials: "include",
-                    cache: "no-store"
-                  }).then(r => r.json());
-
-                  if (optRes && optRes.ok && window.__OFFLINE__ && typeof window.__OFFLINE__.cachePut === "function") {
-                    await window.__OFFLINE__.cachePut("options:" + k, "options", optRes);
-                    console.log("Prefetch options cached ✅", k, "rows:", Array.isArray(optRes.rows) ? optRes.rows.length : 0);
-                  } else {
-                    console.warn("Prefetch options skipped ⚠️", k, optRes?.error || "no ok");
-                  }
-                } catch (optErr) {
-                  console.warn("Prefetch options failed ❌", k, optErr?.message || optErr);
-                }
-
-                ok++;
-                console.log("Prefetch cached ✅", k);
-              } else {
+              if (!bundleRes || !bundleRes.ok) {
                 fail++;
-                console.warn("Prefetch failed ❌", k, bundleRes?.error || "no ok");
+                console.warn("Prefetch bundle failed ❌", k, bundleRes?.error || "no ok");
+                await new Promise(r => setTimeout(r, 150));
+                continue;
               }
+
+              localStorage.setItem(
+                cacheKey,
+                JSON.stringify({
+                  savedAt: new Date().toISOString(),
+                  data: bundleRes
+                })
+              );
+
+              try {
+                if (window.__OFFLINE__ && typeof window.__OFFLINE__.cachePut === "function") {
+                  await window.__OFFLINE__.cachePut("bundle:" + k, "bundle", bundleRes);
+                }
+              } catch (idbErr) {
+                console.warn("Prefetch bundle IDB cache failed ❌", k, idbErr);
+              }
+
+              try {
+                const optRes = await fetch("/api/form-options.php?formKey=" + encodeURIComponent(k), {
+                  method: "GET",
+                  credentials: "include",
+                  cache: "no-store"
+                }).then(r => r.json());
+
+                if (optRes && optRes.ok && window.__OFFLINE__ && typeof window.__OFFLINE__.cachePut === "function") {
+                  await window.__OFFLINE__.cachePut("options:" + k, "options", optRes);
+                  console.log("Prefetch options cached ✅", k, "rows:", Array.isArray(optRes.rows) ? optRes.rows.length : 0);
+                } else {
+                  console.warn("Prefetch options skipped ⚠️", k, optRes?.error || "no ok");
+                }
+              } catch (optErr) {
+                console.warn("Prefetch options failed ❌", k, optErr?.message || optErr);
+              }
+
+              ok++;
+              console.log("Prefetch cached ✅", k);
 
             } catch (e) {
               fail++;
@@ -4839,7 +4879,7 @@ async function appInit(){
         } catch (e) {
           console.warn("Prefetch bootstrap failed:", e?.message || e);
         } finally {
-          console.log("Prefetch finished ✅ ok =", ok, "fail =", fail);
+          console.log("Prefetch finished ✅ ok =", ok, "fail =", fail, "skipped =", skipped);
           window.__UFRP_PREFETCH_RUNNING__ = false;
         }
       }, 0);
