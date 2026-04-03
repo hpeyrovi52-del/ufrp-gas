@@ -246,12 +246,17 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
       }
 
       .netDot{
-        width:10px;
-        height:10px;
-        border-radius:999px;
-        background:#22c55e;
+        width:18px;
+        height:18px;
+        border-radius:6px;
+        background-image:url("/favicon-48.png");
+        background-position:center;
+        background-repeat:no-repeat;
+        background-size:cover;
         box-shadow: 0 0 0 2px rgba(255,255,255,0.85);
         flex:0 0 auto;
+        filter:none;
+        transition: filter 160ms ease, opacity 160ms ease, transform 160ms ease;
       }
 
       .fieldBadge.offline{
@@ -260,7 +265,9 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
         border-color: rgba(17,24,39,0.10) !important;
       }
 
-      .netDot.offline{ background:#ef4444; }
+      .netDot.offline{
+        filter: grayscale(1) saturate(0) opacity(.82);
+      }
 
       .backBtn{
         border: 1px solid rgba(17,24,39,0.10);
