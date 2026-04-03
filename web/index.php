@@ -1058,6 +1058,16 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
         flex:0 0 auto;
       }
 
+      .desktopRefreshBtn{
+        display:inline-flex;
+      }
+
+      @media (hover: none), (pointer: coarse) {
+        .desktopRefreshBtn{
+          display:none !important;
+        }
+      }
+
       .pullRefreshHint{
         position: sticky;
         top: 8px;
@@ -1177,13 +1187,28 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
                 </div>
               </div>
 
-              <button class="backBtn"
-                      id="backBtn"
-                      type="button"
-                      onclick="backToMenu()"
-                      style="display:none;">
-                بازگشت
-              </button>
+              <div class="topLeftActions">
+                <button
+                  id="refreshAppBtn"
+                  class="iconBtn desktopRefreshBtn"
+                  type="button"
+                  title="بروزرسانی برنامه"
+                  aria-label="بروزرسانی برنامه"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
+                    <path d="M21 3v6h-6"></path>
+                  </svg>
+                </button>
+
+                <button class="backBtn"
+                        id="backBtn"
+                        type="button"
+                        onclick="backToMenu()"
+                        style="display:none;">
+                  بازگشت
+                </button>
+              </div>
             </div>
 
             <!-- STATUS LINE -->
