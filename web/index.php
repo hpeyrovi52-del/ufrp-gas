@@ -224,6 +224,23 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
         gap:8px;
       }
 
+      #titleChip{
+        min-height: 42px;
+        padding: 0 14px;
+        border-radius: 18px;
+        border: 1px solid rgba(30,91,215,0.22);
+        background: rgba(30,91,215,0.16);
+        box-shadow: 0 1px 2px rgba(17,24,39,0.06);
+        color: rgba(17,24,39,0.92);
+        box-sizing: border-box;
+      }
+
+      #titleChip #appTitle{
+        font-size: 14px;
+        font-weight: 1000;
+        letter-spacing: .01em;
+      }
+
       .netDot{
         width:10px;
         height:10px;
