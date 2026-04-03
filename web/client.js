@@ -1912,6 +1912,32 @@ function updateRefreshChipVisibility_(isMenuView){
 }
 
 let __UFRP_REQUIRED_UPDATE_RUNNING__ = false;
+const __UFRP_ACK_BUILD_KEY__ = "__UFRP_LAST_ACK_BUILD__";
+const __UFRP_EXPECTED_BUILD_KEY__ = "__UFRP_EXPECT_BUILD_AFTER_REFRESH__";
+
+function finalizeRequiredAppUpdateState_(){
+  try {
+    const currentBuild = String(window.__UFRP_APP_BUILD_ID__ || "").trim();
+    if (!currentBuild) return;
+
+    const expectedBuild = String(localStorage.getItem(__UFRP_EXPECTED_BUILD_KEY__) || "").trim();
+    const ackBuild = String(localStorage.getItem(__UFRP_ACK_BUILD_KEY__) || "").trim();
+
+    if (expectedBuild && expectedBuild === currentBuild) {
+      localStorage.setItem(__UFRP_ACK_BUILD_KEY__, currentBuild);
+      localStorage.removeItem(__UFRP_EXPECTED_BUILD_KEY__);
+      console.log("Required update acknowledged ✅", currentBuild);
+      return;
+    }
+
+    if (!ackBuild) {
+      localStorage.setItem(__UFRP_ACK_BUILD_KEY__, currentBuild);
+      console.log("Initial build acknowledgment saved ✅", currentBuild);
+    }
+  } catch (e) {
+    console.warn("finalizeRequiredAppUpdateState_ failed:", e);
+  }
+}
 
 async function checkForRequiredAppUpdateOnMenuLoad_(){
   if (__UFRP_REQUIRED_UPDATE_RUNNING__) return;
@@ -1925,14 +1951,19 @@ async function checkForRequiredAppUpdateOnMenuLoad_(){
     }).then(r => r.json());
 
     const enabled = !!res?.enabled;
-    const localBuild = String(window.__UFRP_APP_BUILD_ID__ || "").trim();
+    const currentBuild = String(window.__UFRP_APP_BUILD_ID__ || "").trim();
     const serverBuild = String(res?.buildId || "").trim();
+    const ackBuild = String(localStorage.getItem(__UFRP_ACK_BUILD_KEY__) || "").trim();
 
     if (!enabled) return;
-    if (!localBuild || !serverBuild) return;
-    if (localBuild === serverBuild) return;
+    if (!currentBuild || !serverBuild) return;
+    if (ackBuild === serverBuild) return;
 
     __UFRP_REQUIRED_UPDATE_RUNNING__ = true;
+
+    try {
+      localStorage.setItem(__UFRP_EXPECTED_BUILD_KEY__, serverBuild);
+    } catch (_) {}
 
     const msg =
       String(res?.message || "").trim() ||
@@ -4736,6 +4767,8 @@ async function appInit(){
   } catch (_) {}
 
   window.__UFRP_PREFETCH_RESTORED_FROM_MANIFEST__ = false;
+
+  finalizeRequiredAppUpdateState_();
 
   try {
     sessionStorage.removeItem("__UFRP_SESSION_MENU_REFRESHED__");
