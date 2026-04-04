@@ -160,6 +160,32 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>ورود به سامانه</title>
 
+  <?php
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? 'ufrpir.peyrovigroup.com';
+    $base = $scheme . '://' . $host;
+    $shareTitle = 'سامانه ثبت تراکنش های مالی';
+    $shareDesc  = 'ورود به نسخه PWA سامانه ثبت تراکنش های مالی UFRP-IR';
+    $shareImage = $base . '/icon-512.png?v=' . (@filemtime(__DIR__ . '/icon-512.png') ?: time());
+    $shareUrl   = $base . '/';
+  ?>
+
+  <meta name="description" content="<?php echo htmlspecialchars($shareDesc, ENT_QUOTES, 'UTF-8'); ?>">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="UFRP-IR">
+  <meta property="og:title" content="<?php echo htmlspecialchars($shareTitle, ENT_QUOTES, 'UTF-8'); ?>">
+  <meta property="og:description" content="<?php echo htmlspecialchars($shareDesc, ENT_QUOTES, 'UTF-8'); ?>">
+  <meta property="og:url" content="<?php echo htmlspecialchars($shareUrl, ENT_QUOTES, 'UTF-8'); ?>">
+  <meta property="og:image" content="<?php echo htmlspecialchars($shareImage, ENT_QUOTES, 'UTF-8'); ?>">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="512">
+  <meta property="og:image:height" content="512">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="<?php echo htmlspecialchars($shareTitle, ENT_QUOTES, 'UTF-8'); ?>">
+  <meta name="twitter:description" content="<?php echo htmlspecialchars($shareDesc, ENT_QUOTES, 'UTF-8'); ?>">
+  <meta name="twitter:image" content="<?php echo htmlspecialchars($shareImage, ENT_QUOTES, 'UTF-8'); ?>">
+
   <style>
     :root{
       --card: rgba(255,255,255,0.72);
