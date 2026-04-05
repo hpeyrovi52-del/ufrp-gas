@@ -439,34 +439,17 @@ const submissionUid = String(submissionMeta?.value || "").trim();
         try {
 
           const file = DriveApp.getFileById(fileId);
-          const desc = String(file.getDescription() || "");
-          const isInPending = pending ? _fileIsInFolder_(file, pending.getId()) : false;
-          const isInFinal = _fileIsInFolder_(file, finalFolder.getId());
+const desc = String(file.getDescription() || "");
+const alreadyThere = /PROMOTED/i.test(desc);
+          if (!alreadyThere) {
+            // Always ensure file ends up ONLY in final folder
+try {
+  finalFolder.addFile(file);
+} catch (_) {}
 
-          if (isInPending) {
-            try {
-              file.moveTo(finalFolder);
-            } catch (moveErr) {
-              try {
-                finalFolder.addFile(file);
-              } catch (addErr) {
-                throw new Error("FINAL_ADD_FAILED: " + addErr);
-              }
-
-              if (pending) {
-                try {
-                  pending.removeFile(file);
-                } catch (removeErr) {
-                  throw new Error("PENDING_REMOVE_FAILED: " + removeErr);
-                }
-              }
-            }
-          } else if (!isInFinal) {
-            try {
-              finalFolder.addFile(file);
-            } catch (addErr) {
-              throw new Error("FINAL_ADD_FAILED: " + addErr);
-            }
+if (pending) {
+  try { pending.removeFile(file); } catch (_) {}
+}
           }
 
           const viewLink = "https://drive.google.com/file/d/" + fileId + "/view";
