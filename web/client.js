@@ -3455,13 +3455,43 @@ function renderDynamicForm(schema, optionsRows){
     else {
       const isAmount = isAmountTitle(title);
 
-      ctlHost.innerHTML = `
-        <input id="${fieldId}" class="control" ${required ? "required" : ""} type="text" ${isAmount ? 'inputmode="numeric"' : ""}>
-      `;
+      if (isAmount) {
+        ctlHost.innerHTML = `
+          <div style="position:relative;">
+            <input
+              id="${fieldId}"
+              class="control"
+              ${required ? "required" : ""}
+              type="text"
+              inputmode="numeric"
+              autocomplete="off"
+              spellcheck="false"
+              style="padding-left:72px;"
+            >
+            <span
+              aria-hidden="true"
+              style="
+                position:absolute;
+                left:14px;
+                top:50%;
+                transform:translateY(-50%);
+                color: rgba(17,24,39,0.38);
+                font-size:14px;
+                font-weight:800;
+                pointer-events:none;
+                user-select:none;
+                white-space:nowrap;
+              "
+            >ریال</span>
+          </div>
+        `;
 
-      if (isAmount){
         const inp = row.querySelector(`#${fieldId}`);
         attachAmountInputBehavior(inp);
+      } else {
+        ctlHost.innerHTML = `
+          <input id="${fieldId}" class="control" ${required ? "required" : ""} type="text">
+        `;
       }
     }
 
