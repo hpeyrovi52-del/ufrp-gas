@@ -1466,9 +1466,9 @@ if (empty($_SESSION["UFRP_USER"]["email"])) {
         </p>
 
         <div class="controls">
-          <button class="navBtn" id="nextBtn" type="button">ماه بعد</button>
-          <div class="monthTitle" id="monthTitle">—</div>
           <button class="navBtn" id="prevBtn" type="button">ماه قبل</button>
+          <div class="monthTitle" id="monthTitle">—</div>
+          <button class="navBtn" id="nextBtn" type="button">ماه بعد</button>
 
           <div class="dropdowns">
             <select class="control" id="yearSelect" aria-label="سال"></select>
