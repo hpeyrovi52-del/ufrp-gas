@@ -245,6 +245,32 @@ async function uploadLocalFilesToGoogleAndInjectAnswers(record) {
     const items = Array.isArray(group?.items) ? group.items : [];
     const links = [];
 
+    const ans = record.answers.find(a =>
+      String(a?.type || "").trim() === "FILE_UPLOAD" &&
+      String(a?.title || "").trim() === title
+    );
+
+    const existingLinks = String(ans?.value || "")
+      .split(/\r?\n/)
+      .map(v => String(v || "").trim())
+      .filter(Boolean)
+      .filter(v => /^https:\/\/drive\.google\.com\/file\/d\/[^/]+\/view/i.test(v));
+
+    if (items.length > 0 && existingLinks.length >= items.length) {
+      for (let i = 0; i < items.length; i++) {
+        items[i].uploadedGoogle = true;
+        items[i].viewLink = String(existingLinks[i] || "").trim();
+        links.push(String(existingLinks[i] || "").trim());
+      }
+
+      if (ans) {
+        ans.value = links.join("\n");
+      }
+
+      log(`SKIP_SERVER_REUPLOAD submissionUid=${submissionUid} title=${title} existingLinks=${existingLinks.length} items=${items.length}`);
+      continue;
+    }
+
     for (const item of items) {
       if (!item) continue;
 
@@ -284,11 +310,6 @@ async function uploadLocalFilesToGoogleAndInjectAnswers(record) {
       item.viewLink = viewLink;
       links.push(viewLink);
     }
-
-    const ans = record.answers.find(a =>
-      String(a?.type || "").trim() === "FILE_UPLOAD" &&
-      String(a?.title || "").trim() === title
-    );
 
     if (ans) {
       ans.value = links.join("\n");
