@@ -5075,8 +5075,11 @@ async function appInit(){
             String(a?.title || "").trim() === String(snap?.title || "").trim()
           );
 
-          if (ans) {
-            ans.value = "";
+          // Keep any existing Drive links from the browser upload path.
+          // If this value is already populated, the on-prem worker can skip
+          // a duplicate Google re-upload and reuse the original pending file.
+          if (ans && typeof ans.value !== "string") {
+            ans.value = String(ans.value || "");
           }
         }
       }
