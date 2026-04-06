@@ -278,8 +278,13 @@
             continue;
           }
 
+          const offlineNow =
+            !navigator.onLine ||
+            !!window.__UFRP_FORCE_OFFLINE__;
+
           const retryable =
-            /timeout|timed out|failed to fetch|network|502|503|offline|upload_to_server_failed|local_api_unreachable|آفلاین|ارسال بعداً انجام می‌شود|پس از برقراری ارتباط|قطع میباشد|ارتباط با سرور|سرور میانی/i.test(errMsg);
+            offlineNow ||
+            /timeout|timed out|failed to fetch|network|network request failed|load failed|err_network|the network connection was lost|internet disconnected|offline|upload_to_server_failed|local_api_unreachable|آفلاین|ارسال بعداً انجام می‌شود|پس از برقراری ارتباط|قطع میباشد|ارتباط با سرور|سرور میانی/i.test(errMsg);
 
           item.updatedAt = new Date().toISOString();
           item.lastError = errMsg;
