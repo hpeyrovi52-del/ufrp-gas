@@ -667,10 +667,10 @@ function normalizeRecentOutboxBridgeItems_(){
 function outboxStageText_(stageKey){
   return (
     stageKey === "local_initial_queue" ? "در صف بارگذاری اولیه" :
-    stageKey === "local_to_server_uploading" ? "در حال بارگذاری به سرور میانی" :
-    stageKey === "server_to_google_queue" ? "در صف بارگذاری سرور میانی به گوگل" :
-    stageKey === "server_to_google_uploading" ? "در حال بارگذاری از سرور میانی به گوگل" :
-    stageKey === "google_finalizing" ? "گوگل در حال ثبت نهایی" :
+    stageKey === "local_to_server_uploading" ? "در حال بارگذاری به سرور" :
+    stageKey === "server_to_google_queue" ? "در صف بارگذاری سرور به سرور نهایی" :
+    stageKey === "server_to_google_uploading" ? "در حال بارگذاری از سرور به سرور نهایی" :
+    stageKey === "google_finalizing" ? "سرور نهایی در حال ثبت نهایی" :
     stageKey === "done" ? "فرایند تکمیل شد" :
     stageKey === "failed_non_retryable" ? "خطای غیر قابل رفع، مورد مجدد باید از طرف کاربر بارگذاری شود" :
     ""
@@ -912,7 +912,7 @@ function normalizeLocalOutboxItems_(items){
     } else if (rawStatus === "failed" && retryableLocalWait) {
       compatStatus = "queued";
       stageKey = "local_to_server_uploading";
-      uiStatusOverride = "ارتباط با سرور میانی قطع میباشد";
+      uiStatusOverride = "ارتباط با سرور قطع میباشد";
     } else if (rawStatus === "failed") {
       compatStatus = "failed";
       stageKey = "failed_non_retryable";
@@ -1225,10 +1225,10 @@ async function syncActiveOutboxRegistry_(){
     const prevOverride = String(prevActive?.uiStatusOverride || "").trim();
 
     if (stageRank < outboxStageRank_("server_to_google_queue")) {
-      item.uiStatusOverride = deviceToServerDown ? "ارتباط با سرور میانی قطع میباشد" : "";
+      item.uiStatusOverride = deviceToServerDown ? "ارتباط با سرور قطع میباشد" : "";
     } else {
       if (isRetryableServerOutboxError_(rawErr)) {
-        item.uiStatusOverride = "ارتباط سرور میانی با اینترنت قطع میباشد";
+        item.uiStatusOverride = "ارتباط سرور با سرور نهایی قطع میباشد";
       } else if (serverNow) {
         item.uiStatusOverride = "";
       } else {
